@@ -160,7 +160,7 @@ class ToolContext:
 CONCEPTS = {
     '人': 'person', '人物': 'person', '人像': 'person', '人群': 'person', '主体': 'person', '男人': 'man', '女人': 'woman',
     '小孩': 'child', '孩子': 'child', '儿童': 'child', '脸': 'face', '手': 'hand', '头发': 'hair',
-    '动物': 'animal', '猫': 'cat', '狗': 'dog', '鸟': 'bird', '马': 'horse', '鱼': 'fish',
+    '动物': 'animal', '猫': 'cat', '猫咪': 'cat', '小猫': 'cat', '狗': 'dog', '鸟': 'bird', '马': 'horse', '鱼': 'fish',
     '车': 'car', '汽车': 'car', '车辆': 'vehicle', '交通工具': 'vehicle', '自行车': 'bicycle', '摩托车': 'motorcycle',
     '船': 'boat', '飞机': 'airplane', '树': 'tree', '花': 'flower', '植物': 'plant', '建筑': 'building', '房子': 'house',
     '天空': 'sky', '桌子': 'table', '椅子': 'chair', '沙发': 'sofa', '家具': 'furniture', '杯子': 'cup', '瓶子': 'bottle',
