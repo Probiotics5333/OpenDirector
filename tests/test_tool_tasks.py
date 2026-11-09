@@ -205,7 +205,7 @@ def test_inpainting_only_changes_the_masked_region(project):
 
 
 @pytest.mark.parametrize('cdn_result', ['image', 'timeout', 'invalid_url', 'malformed_url'])
-def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(project, cdn_result):
+def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(project, cdn_result, public_cdn):
     store, project_id, session = project
     configs = ModelConfigs(store.local.repository)
     configs.save('image', 'https://images.test/v1', 'seedream-5.0-pro', 'service-secret', protocol='openai')
@@ -222,7 +222,7 @@ def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(proje
             if cdn_result == 'malformed_url':
                 url = 'https://[broken/result.png'
             return httpx.Response(200, json={'data': [{'url': url}]})
-        assert request.url.host == 'cdn.test'
+        assert request.url.host == '93.184.216.34' and request.headers['host'] == 'cdn.test'
         assert 'authorization' not in request.headers
         if cdn_result == 'timeout':
             raise httpx.ReadTimeout('download interrupted', request=request)
@@ -593,6 +593,7 @@ def test_layer_decompose_by_boxes_and_description_without_an_editor(project):
     task = run(store, configs, transport, project_id, session,
                {'tool': 'layer-decompose', 'sourceAssetIds': [source], 'parameters': {'mode': 'description', 'prompt': '吉他'}})
     assert task['status'] == 'failed' and '吉他' in task['error']
+    assert task['errorDetails'] == {'code': 'tool_concept_translation', 'params': {'label': '吉他'}}
 
 
 def test_selection_preview_returns_alpha_masks_without_output_assets(project):
@@ -810,6 +811,7 @@ def test_video_matting_keeps_the_tracked_subject_over_the_chosen_background(proj
     task = run(store, configs, httpx.MockTransport(tracking_server(log, empty=True)), project_id, session,
                {'tool': 'video-matting', 'sourceAssetIds': [source], 'parameters': {'background': 'black'}})
     assert task['status'] == 'failed' and '没有识别到「人物」' in task['error']
+    assert task['errorDetails'] == {'code': 'tool_no_video_match', 'params': {'label': '人物'}}
 
 
 def configure_depth(store):

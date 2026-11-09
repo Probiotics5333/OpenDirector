@@ -31,6 +31,14 @@ class Output:
     suffix: str
     title: str
 
+
+class ToolInputError(ProjectError):
+    """A tool rejection with stable localization identity and interpolation data."""
+
+    def __init__(self, message, *, code, label):
+        super().__init__(message, 422, code=code)
+        self.params = {'label': label}
+
 class ToolContext:
     """What a recipe may use: inputs, model capabilities and progress reporting."""
 
@@ -121,7 +129,9 @@ class ToolContext:
                 except ProjectError:
                     english = None
             if not english or not english.isascii():
-                raise ProjectError(f'无法识别「{part}」，请改用英文描述，或在“模型接入”中添加对话模型以自动翻译。', 422)
+                raise ToolInputError(
+                    f'无法识别「{part}」，请改用英文描述，或在“模型接入”中添加对话模型以自动翻译。',
+                    code='tool_concept_translation', label=part)
             pairs.append((english, part))
         return pairs
 

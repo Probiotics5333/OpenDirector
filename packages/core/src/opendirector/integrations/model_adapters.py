@@ -291,7 +291,8 @@ class OpenAIImages(ModelAdapter):
                 async def download():
                     target, base = urlsplit(result['url']), urlsplit(config['url'])
                     if (target.scheme, target.netloc) != (base.scheme, base.netloc):
-                        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(config, 'png', result['url'])
+                        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(
+                            config, 'png', result['url'], public_only=True)
                         return data
                     async with client.stream('GET', result['url'], headers=auth_headers(config)) as response:
                         return await bounded(response, stage='download', secrets=secrets)

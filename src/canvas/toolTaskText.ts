@@ -7,6 +7,16 @@ import { translateToolText } from "./toolText.ts";
 
 const CJK = /[\u3400-\u9fff]/;
 
+export interface ToolTaskFailure {
+  code: string;
+  params?: MessageParams;
+}
+
+const CODE: Record<string, MessageKey> = {
+  tool_concept_translation: "errors.tools.error.conceptTranslation",
+  tool_no_video_match: "errors.tools.error.noVideoMatch",
+};
+
 const PHASE: Record<string, MessageKey> = {
   准备素材: "errors.tools.phase.prepare",
   停止处理中: "errors.tools.phase.stopping",
@@ -113,7 +123,10 @@ export function toolTaskPhase(
 export function toolTaskError(
   text: string | null | undefined,
   t: Translate = defaultTranslate,
+  failure?: ToolTaskFailure,
 ): string | undefined {
+  const key = failure && CODE[failure.code];
+  if (key) return t(key, failure?.params);
   if (!text) return undefined;
   if (!CJK.test(text)) return text;
   if (text.startsWith("生成请求的提交结果不明。"))
