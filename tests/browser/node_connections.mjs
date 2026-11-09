@@ -447,6 +447,52 @@ try {
     await page.reload();
     await page.getByText("已保存到本机", { exact: true }).waitFor();
     assert.equal(await page.locator(".react-flow__edge").count(), count);
+    if (kind === "image" && targetKind === "subject") {
+      const sourceAssetId = saved.canvasItems.find(
+        (item) => item.id === f.source,
+      ).binding.objectRef.assetId;
+      const unavailable = (url) =>
+        url.pathname ===
+        `/api/creation/projects/${f.id}/assets/${sourceAssetId}/content`;
+      await page.route(unavailable, (route) =>
+        route.fulfill({
+          status: 409,
+          contentType: "application/json",
+          body: JSON.stringify({
+            code: "storage_unavailable",
+            message: "Fixture asset is unavailable",
+          }),
+        }),
+      );
+      await page.reload();
+      await page.getByText("已保存到本机", { exact: true }).waitFor();
+      await source.locator(".cw-node-placeholder").waitFor();
+      await source.hover();
+      await page.waitForTimeout(100);
+      assert.equal(
+        await page
+          .locator(
+            `.cw-node-reference-port[data-reference-source="${f.source}"]`,
+          )
+          .count(),
+        0,
+      );
+      await page.unroute(unavailable);
+      await page.reload();
+      await page.getByText("已保存到本机", { exact: true }).waitFor();
+      await source.locator("img").waitFor();
+      await source.hover();
+      const recoveredPorts = page.locator(
+        `.cw-node-reference-port[data-reference-source="${f.source}"]`,
+      );
+      await recoveredPorts.first().waitFor();
+      assert.deepEqual(
+        await recoveredPorts.evaluateAll((ports) =>
+          ports.map((port) => port.dataset.direction),
+        ),
+        ["out", "out", "out", "out"],
+      );
+    }
     rows.push({
       mode: "unified",
       kind,

@@ -288,12 +288,11 @@ class OpenAIImages(ModelAdapter):
                     return base64.b64decode(result['b64_json'], validate=True)
                 # Compatible APIs can return a CDN URL even when base64 was requested.
                 # Reuse the generation downloader, which sends no API key to the CDN.
-                target, base = urlsplit(result['url']), urlsplit(config['url'])
-                if (target.scheme, target.netloc) != (base.scheme, base.netloc):
-                    _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(config, 'png', result['url'])
-                    return data
-
                 async def download():
+                    target, base = urlsplit(result['url']), urlsplit(config['url'])
+                    if (target.scheme, target.netloc) != (base.scheme, base.netloc):
+                        _, data = await VolcengineGeneration(None, transport=self.transport).resume_result(config, 'png', result['url'])
+                        return data
                     async with client.stream('GET', result['url'], headers=auth_headers(config)) as response:
                         return await bounded(response, stage='download', secrets=secrets)
                 return await _call('download', download)

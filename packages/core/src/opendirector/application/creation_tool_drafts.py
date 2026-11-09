@@ -87,7 +87,7 @@ def freeze_inputs(service, project_id, value):
 
 def _numbered(title):
     head, separator, tail = title.rpartition(' ')
-    return (head, int(tail)) if separator and tail.isdigit() and head else (title, None)
+    return (head, int(tail)) if separator and head and tail.isascii() and tail.isdigit() else (title, None)
 
 
 def result_title(snapshot, base, used=(), exclude=None):
@@ -211,10 +211,10 @@ def publish_outputs(service, task, session, policy):
         if item:
             editable(snapshot, item.id)
             expect('canvas_item', item)
-            if item.title != title:
-                operations.append(dict(type='canvas.update', payload=dict(itemId=item.id, title=title)))
             if not item.visible:
                 operations.append(dict(type='canvas.show', payload=dict(item=item.model_dump(mode='json'))))
+            if item.title != title:
+                operations.append(dict(type='canvas.update', payload=dict(itemId=item.id, title=title)))
             operations.append(dict(type='canvas.materialize', payload=dict(itemId=item.id, asset=asset_ref(asset).model_dump(mode='json'), discardGenerationDraft=True)))
         else:
             width, height = media_card_size(asset.kind, asset.metadata.width, asset.metadata.height,

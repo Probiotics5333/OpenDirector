@@ -204,7 +204,7 @@ def test_inpainting_only_changes_the_masked_region(project):
     assert image.getpixel((5, 5)) == (0, 0, 255) and image.getpixel((60, 60))[0] > 200
 
 
-@pytest.mark.parametrize('cdn_result', ['image', 'timeout', 'invalid_url'])
+@pytest.mark.parametrize('cdn_result', ['image', 'timeout', 'invalid_url', 'malformed_url'])
 def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(project, cdn_result):
     store, project_id, session = project
     configs = ModelConfigs(store.local.repository)
@@ -219,6 +219,8 @@ def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(proje
             assert request.headers['authorization'] == 'Bearer service-secret'
             assert b'b64_json' in request.read()
             url = 'file:///private.png' if cdn_result == 'invalid_url' else 'https://cdn.test/result.png'
+            if cdn_result == 'malformed_url':
+                url = 'https://[broken/result.png'
             return httpx.Response(200, json={'data': [{'url': url}]})
         assert request.url.host == 'cdn.test'
         assert 'authorization' not in request.headers
@@ -239,6 +241,8 @@ def test_smart_edit_accepts_cdn_results_without_forwarding_the_service_key(proje
         assert task['status'] == 'failed'
         assert '提交结果不明' not in task['error']
         assert ('连接超时' if cdn_result == 'timeout' else '接口协议') in task['error']
+        if cdn_result in {'invalid_url', 'malformed_url'}:
+            assert calls == ['POST']
 
 
 def test_presets_return_one_output_per_shot_and_local_hd_needs_no_model(project):

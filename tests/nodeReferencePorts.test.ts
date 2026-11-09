@@ -11,8 +11,37 @@ import {
   REFERENCE_PORT_SIZE,
 } from "../src/canvas/connectionPorts.ts";
 import { createNode } from "../src/canvas/model.ts";
+import { canStartReference } from "../src/canvas/connectionPolicy.ts";
 
 const bounds = { x: 100, y: 100, width: 300, height: 300 };
+
+test("asset ports require usable content while empty generation ports stay discoverable", () => {
+  for (const kind of ["image", "video", "audio"] as const) {
+    const asset = createNode(kind, undefined, {
+      mediaRole: "asset",
+      src: `data:${kind}/fixture`,
+      assetState: "ready",
+    });
+    assert.equal(canStartReference(asset), true, kind);
+    assert.equal(referencePortDirection(asset), "out", kind);
+    assert.equal(
+      canStartReference({
+        ...asset,
+        data: { ...asset.data, assetState: "missing" },
+      }),
+      false,
+      kind,
+    );
+    assert.equal(
+      canStartReference(createNode(kind, undefined, { mediaRole: "asset" })),
+      false,
+      kind,
+    );
+    const emptyGeneration = createNode(kind);
+    assert.equal(canStartReference(emptyGeneration), true, kind);
+    assert.equal(referencePortDirection(emptyGeneration), "in", kind);
+  }
+});
 
 test("resting port keeps its screen size cap and a six pixel gap to the node", () => {
   for (const zoom of [0.08, 0.6, 1, 1.5, 4, 8]) {
@@ -25,9 +54,8 @@ test("resting port keeps its screen size cap and a six pixel gap to the node", (
     );
     // The drawn plus stays proportional to the circle at every zoom.
     assert.ok(
-      Math.abs(
-        metrics.iconSize - REFERENCE_PORT_ICON_SIZE * metrics.scale,
-      ) < 1e-8,
+      Math.abs(metrics.iconSize - REFERENCE_PORT_ICON_SIZE * metrics.scale) <
+        1e-8,
     );
     assert.ok(REFERENCE_PORT_ICON_SIZE < REFERENCE_PORT_SIZE);
     const resting = restingReferencePort(bounds, "right", zoom);
