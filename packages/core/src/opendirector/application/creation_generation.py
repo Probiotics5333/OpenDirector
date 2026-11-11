@@ -199,6 +199,8 @@ class CreationGeneration(GenerationRuntime):
             seconds = intent.get('durationSeconds')
             if rules['profile'] == 'fasth3-omni':
                 params = video_parameters(node, records, duration_seconds=seconds)
+                if config.get('videoAdapter') == 'fasth3_dual' and node.get('videoMode') == 'first_frame':
+                    params['num_inference_steps'] = 20
                 params['seed'] = new_seed()
             elif rules['profile'] == 'standard-video':
                 params = {}
