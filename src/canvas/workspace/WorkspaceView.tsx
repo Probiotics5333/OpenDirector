@@ -1487,7 +1487,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
               ...selectionPresentation.placement?.composer,
               width:
                 activeAction.tool === "image-presets"
-                  ? Math.min(440, selectionPresentation.composerWidth)
+                  ? Math.min(470, selectionPresentation.composerWidth)
                   : selectionPresentation.composerWidth,
               maxHeight: selectionPresentation.composerMaxHeight,
               transform: selectionPresentation.composerTransform,
