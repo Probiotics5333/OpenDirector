@@ -125,7 +125,9 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
     total_audio_ms, total_video_ms, media_bytes = 0, 0, 0
     source_metadata, text_context = [], []
     mentioned = {str(part['assetId']) for part in task.get('promptContent') or () if part['type'] == 'reference'}
-    role_by_asset = {str(value['assetId']): value['role'] for value in task.get('referenceRoles') or []}
+    roles_by_asset: dict[str, list[str]] = {}
+    for value in task.get('referenceRoles') or []:
+        roles_by_asset.setdefault(str(value['assetId']), []).append(value['role'])
     slot_roles = set()
     for index, (data, meta, source_kind) in enumerate(references(store, task['projectId'], task['referenceIds'], overrides), 1):
         entry = {'assetId': meta['id'], 'fingerprint': meta['fingerprint'], 'kind': source_kind, 'transmission': 'content'}
@@ -172,25 +174,31 @@ def generation_references(store, task, config, *, complete=True, overrides=None)
                 raise ProjectError(f'“{meta["name"]}”不符合当前图片模型的参考尺寸要求。')
             if rules['profile'] == 'minimax-h3-image':
                 validate_minimax_image_reference(mime, width, height)
-            role = 'reference_image'
+            roles = ['reference_image']
             if kind == 'video' and mode == 'first_frame':
                 # Frame slots are per-slot: one image each, and the slot the
                 # caller asked for is kept so Ark receives last_frame as such.
                 # A plain 'reference' role is a first frame, matching what a
                 # single image meant before last_frame existed; it never turns
-                # into a last frame implicitly.
-                requested = role_by_asset.get(str(meta['id']))
-                role = requested if requested in {'first_frame', 'last_frame'} else 'first_frame'
-                if role in slot_roles:
-                    raise ProjectError('首尾帧每个槽位只能使用一张图片，请在画布上明确指定首帧和尾帧。')
-                slot_roles.add(role)
-            result['images'].append(data_uri(data, mime))
-            result['imageRoles'].append(role)
-            number = len(result['images'])
-            # Dual-frame anchors travel as uploads, so the prompt stays plain.
-            if not dual_frames:
-                result['prompt'] += f'\n参考{index}：{meta["name"]}，对应第{number}张参考图片（图片{number}，<Picture {number}>）。'
-            entry.update(role=role, number=number)
+                # into a last frame implicitly. One asset may fill both slots,
+                # so every requested role is emitted as its own anchor.
+                requested = [role for role in roles_by_asset.get(str(meta['id']), ())
+                             if role in {'first_frame', 'last_frame'}]
+                roles = requested or ['first_frame']
+            uri = data_uri(data, mime)
+            for role in roles:
+                if kind == 'video' and mode == 'first_frame':
+                    if role in slot_roles:
+                        raise ProjectError('首尾帧每个槽位只能使用一张图片，请在画布上明确指定首帧和尾帧。')
+                    slot_roles.add(role)
+                result['images'].append(uri)
+                result['imageRoles'].append(role)
+                number = len(result['images'])
+                # Dual-frame anchors travel as uploads, so the prompt stays plain.
+                if not dual_frames:
+                    result['prompt'] += f'\n参考{index}：{meta["name"]}，对应第{number}张参考图片（图片{number}，<Picture {number}>）。'
+                result['manifest'].append({**entry, 'role': role, 'number': number})
+            continue
         elif source_kind == 'video':
             duration = meta.get('durationMs')
             if meta['type'] not in {'video/mp4', 'video/quicktime'} or len(data) > rules['videoBytes']:

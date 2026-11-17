@@ -200,9 +200,9 @@ class GenerationProviders(VolcengineGeneration):
                             extra = {'task': 'ref2va', 'audio_flow_shift': 3}
                             steps = 8
                             if frame_indices is not None:
-                                extra.update(task='fl2va' if frame_indices else 't2va', sampler='res_multistep')
-                                if frame_indices:
-                                    extra['frame_indices'] = frame_indices
+                                # Validation requires both anchors, so this is
+                                # always a first/last-frame submission.
+                                extra.update(task='fl2va', sampler='res_multistep', frame_indices=frame_indices)
                                 steps = parameters.get('num_inference_steps', 20)
                             form.update({
                                 'size': parameters.get('size', '832x480'),
