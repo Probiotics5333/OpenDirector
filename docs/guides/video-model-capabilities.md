@@ -2,6 +2,8 @@
 
 Model connection details and output capabilities are stored separately in the local backend. Capabilities are declarative data: they contain no scripts and do not modify model weights, sampling steps or server memory. This implementation is independent of other products' code.
 
+Generation history shows the requested video duration and the measured result duration separately. A 4-second FastH3 request that preserves the last anchor may produce 107 frames at 24 fps, displayed as a 4.458-second result.
+
 ## Interface
 
 1. Open "Model connections", add or edit a video model, and fill in the base URL, Model ID and authentication.
