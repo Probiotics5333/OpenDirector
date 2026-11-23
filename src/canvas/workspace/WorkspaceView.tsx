@@ -9,7 +9,7 @@ import { createNode, type CanvasNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
 import openDirectorLogoAnimation from "../../assets/open_director_logo_anim.gif";
-import { request as apiRequest, errorMessage } from "../../backend/api.ts";
+import { request as apiRequest, errorMessage, json as apiJson } from "../../backend/api.ts";
 import { creationClient, objectVersion, visibleItems } from "../../backend/creationClient.ts";
 
 import { previewImageSelection } from "../../backend/imageSelections";
@@ -348,6 +348,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
   };
   const [exampleLoading, setExampleLoading] = useState(false);
   const exampleCatalog = useRef<Promise<ExampleEntry[]> | null>(null);
+  const optimizedPrompts = useRef(new Map<string, string>());
   const loadExamples = () =>
     (exampleCatalog.current ??= loadExampleCatalog().then((result) =>
       availableExamples(result.catalog),
@@ -2000,6 +2001,31 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                   setLibraryOpen(true);
                 }}
                 running={composerRunning}
+                lastOptimizedText={optimizedPrompts.current.get(
+                  `${doc.id}:${composerNode.id}`,
+                )}
+                onPromptOptimized={(text) =>
+                  optimizedPrompts.current.set(
+                    `${doc.id}:${composerNode.id}`,
+                    text,
+                  )
+                }
+                onOptimizePrompt={async (data, signal) => {
+                  const current = historyRef.current.present;
+                  if (!(await persist(current, false)))
+                    throw new Error(t("generation.optimize.saveFailed"));
+                  signal.throwIfAborted();
+                  return apiRequest<{ prompt: string; audioOmitted: boolean }>(
+                    `/creation/projects/${current.id}/items/${composerNode.id}/optimize-prompt`,
+                    {
+                      ...apiJson("POST", {
+                        ...data,
+                        preferredModelId: rt.assistantModels.agent ?? null,
+                      }),
+                      signal,
+                    },
+                  );
+                }}
                 backendModels={backendCatalog.models}
                 onCheckModels={backendCatalog.refreshAvailability}
                 removeWatermark={backendCatalog.settings?.removeWatermark}

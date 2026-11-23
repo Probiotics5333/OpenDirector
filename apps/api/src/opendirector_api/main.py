@@ -19,6 +19,7 @@ from opendirector.application.creation_generation import CreationGeneration
 from opendirector.application.model_catalog import ModelCatalog
 from opendirector.application.model_availability import ModelAvailability
 from opendirector.application.preferences import Preferences
+from opendirector.application.prompt_optimization import PromptOptimization
 from opendirector.application.tool_tasks import ToolTasks
 from opendirector.application.creation_tool_assets import CreationToolAssets
 from opendirector.infrastructure.local_projects import LocalProjects
@@ -78,7 +79,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
                 availability.probe.close()
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.5", lifespan=lifespan)
-    app.include_router(creation_routes(creation_projects, creation_generation))
+    app.include_router(creation_routes(creation_projects, creation_generation,
+        PromptOptimization(creation_projects, model_configs, chat_provider or ChatCompletions())))
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider, active=active_agents))
     app.include_router(library_routes(creation_projects))
     app.include_router(voice_routes(creation_generation.voices))

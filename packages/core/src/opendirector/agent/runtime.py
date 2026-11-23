@@ -121,7 +121,7 @@ async def configured_runtimes() -> list[dict]:
 
 class AgentRuntimes:
     def __init__(self, projects, generation, configs, provider=None):
-        self.business = AgentTools(projects, generation, configs)
+        self.business = AgentTools(projects, generation, configs, provider)
         self.adapter = native.NativeRuntime(provider)
         self.jiuwenswarm = jiuwenswarm.JiuwenSwarmRuntime()
 

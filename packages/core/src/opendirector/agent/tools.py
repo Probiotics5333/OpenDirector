@@ -14,6 +14,8 @@ from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_timeline_packages import CreationTimelinePackages
 from opendirector.domain.creation.timeline_packages import TimelinePackageExportFile, TimelinePackageImportFile
 from opendirector.application.creation_canvas import CreationCanvas
+from opendirector.application.prompt_optimization import PromptOptimization, PromptOptimizationInput
+from opendirector.integrations.chat_completions import ChatCompletions
 from opendirector.application.voice_library import VoiceLibrary
 from opendirector.domain.creation.assets import AssetProvenance
 from opendirector.domain.creation.base import ObjectVersion
@@ -278,6 +280,12 @@ def tools() -> list[dict]:
                               {'type': 'object', 'properties': {'type': command_type, 'payload': {'type': 'object'},
                                'expectedVersions': versions, 'expectedPreview': {'type': ['string', 'null']}}, '$defs': definitions,
                                'required': ['type', 'payload'], 'additionalProperties': False}))
+    result.append(tool_schema('prompt_optimize',
+        'Rewrite an image or video draft with its saved references and the configured text model. '
+        'Return a draft only; does not edit the node or generate media. Use [[OD_REF_n]] and inlineReferences to retain inline reference positions.',
+        {**PromptOptimizationInput.model_json_schema(), 'properties': {
+            **PromptOptimizationInput.model_json_schema()['properties'], 'itemId': {'type': 'string', 'format': 'uuid'},
+        }, 'required': ['itemId', 'prompt']}))
     result.append(tool_schema('timeline_package_export', 'Export an exact saved timeline revision to a new .timeline.zip file in the active execution directory. No editing session or open editor UI is required.', TimelinePackageExportFile.model_json_schema()))
     result.append(tool_schema('timeline_package_import', 'Import a .timeline.zip file from this execution directory. Reuse operationId and archiveFingerprint on retry. Omit replacement fields to create a new editable timeline.', TimelinePackageImportFile.model_json_schema()))
 
@@ -302,7 +310,8 @@ def tools() -> list[dict]:
 
 
 class AgentTools:
-    def __init__(self, projects, generation, configs):
+    def __init__(self, projects, generation, configs, chat_provider=None):
+        self.prompt_optimization = PromptOptimization(projects, configs, chat_provider or ChatCompletions())
         self.projects = projects
         self.generation = generation
         self.configs = configs
@@ -313,6 +322,11 @@ class AgentTools:
     async def execute(self, project_id: UUID, turn_id: UUID, session: str, call_id: str,
                       name: str, arguments: dict, roots: list[Path], config: dict | None, native_runtime: str | None = None,
                       execution_directory: Path | None = None) -> JsonValue:
+        if name == 'prompt_optimize':
+            item_id = UUID(arguments['itemId'])
+            value = PromptOptimizationInput.model_validate({k: v for k, v in arguments.items() if k != 'itemId'})
+            return await self.prompt_optimization.rewrite(project_id, item_id, session, value.prompt,
+                value.inlineReferences, value.preferredModelId or (config or {}).get('id'))
         if name in {'timeline_package_export', 'timeline_package_import'}:
             with self.projects.local.transaction() as db:
                 project_directory, _, _ = self.projects._load(db, project_id)

@@ -26,6 +26,7 @@ from opendirector.domain.creation.base import MediaKind
 from opendirector.domain.creation.commands import Command, CommandReceipt, Query as CreationQuery
 from opendirector.domain.creation.project import ProjectSnapshot, ViewState
 from opendirector.domain.projects import ProjectError
+from opendirector.application.prompt_optimization import PromptOptimizationInput
 from opendirector.domain.timeline_errors import timeline_error, timeline_error_message
 from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.media.fonts import MAX_FONT_BYTES, inspect_font
@@ -59,7 +60,7 @@ class TemporaryPackageResponse(FileResponse):
             Path(self.path).unlink(missing_ok=True)
 
 
-def creation_routes(projects: CreationProjects, generation=None):
+def creation_routes(projects: CreationProjects, generation=None, prompt_optimization=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
     canvas = CreationCanvas(projects)
@@ -80,6 +81,14 @@ def creation_routes(projects: CreationProjects, generation=None):
             value.extend(chunk)
         response.headers['Cache-Control'] = 'no-store'
         return await run_in_threadpool(preview_font_coverage, bytes(value))
+
+    if prompt_optimization is not None:
+        @router.post('/projects/{project_id}/items/{item_id}/optimize-prompt')
+        async def optimize_prompt(project_id: UUID, item_id: UUID, value: PromptOptimizationInput,
+                                  x_opendirector_session: UUID = Header()):
+            return await prompt_optimization.rewrite(
+                project_id, item_id, str(x_opendirector_session), value.prompt,
+                value.inlineReferences, value.preferredModelId)
 
     @router.get('/projects')
     def list_projects():
