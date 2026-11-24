@@ -27,6 +27,12 @@ from opendirector.infrastructure.creation_projects import CreationProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
 from opendirector_api.creation import creation_routes
+
+
+async def _cli_prompt_rewrite(runtime, model, thinking, messages):
+    """Resolve the CLI bridge at call time so tests can replace it."""
+    from opendirector.agent import prompt_rewrite
+    return await prompt_rewrite.rewrite(runtime, model, thinking, messages)
 from opendirector_api.agent import agent_routes
 from opendirector_api.library import library_routes
 from opendirector_api.voices import voice_routes
@@ -80,7 +86,8 @@ def create_app(store: LocalProjects | None = None, chat_provider=None, generatio
 
     app = FastAPI(title="OpenDirector Local API", version="0.1.5", lifespan=lifespan)
     app.include_router(creation_routes(creation_projects, creation_generation,
-        PromptOptimization(creation_projects, model_configs, chat_provider or ChatCompletions())))
+        PromptOptimization(creation_projects, model_configs, chat_provider or ChatCompletions(),
+            cli_rewrite=_cli_prompt_rewrite)))
     app.include_router(agent_routes(creation_projects, creation_generation, model_configs, chat_provider, active=active_agents))
     app.include_router(library_routes(creation_projects))
     app.include_router(voice_routes(creation_generation.voices))

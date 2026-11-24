@@ -4,7 +4,8 @@ import { DesktopSidebar } from "./DesktopSidebar";
 import { Background, BackgroundVariant, MiniMap, SelectionMode, ViewportPortal } from "@xyflow/react";
 
 import "@xyflow/react/dist/style.css";
-import { Suspense, useEffect, useRef, useState, type CSSProperties } from "react";
+import { Suspense, useCallback, useEffect, useRef, useState, type CSSProperties } from "react";
+import type { AssistantModelSelection } from "../../backend/chat.ts";
 import { createNode, type CanvasNode } from "../model.ts";
 import { NodeVersionHistory } from "../NodeVersionHistory";
 
@@ -113,6 +114,10 @@ import { AssetMedia } from "../useAssetMedia.tsx";
 
 
 export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
+  const assistantModel = useRef<{ projectId: string; selection: AssistantModelSelection | null }>(null);
+  const onAgentModel = useCallback((projectId: string, selection: AssistantModelSelection | null) => {
+    assistantModel.current = { projectId, selection };
+  }, []);
   const timelineOutput = useTimelineOutput(rt.doc.id, rt.doc.nodes);
   const runLayoutPending = useRef(false);
   const {
@@ -2004,14 +2009,27 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                 lastOptimizedText={optimizedPrompts.current.get(
                   `${doc.id}:${composerNode.id}`,
                 )}
-                onPromptOptimized={(text) =>
+                onPromptOptimized={(text) => {
                   optimizedPrompts.current.set(
                     `${doc.id}:${composerNode.id}`,
                     text,
-                  )
+                  );
+                  notify(
+                    t("generation.optimize.toast", {
+                      shortcut: navigator.platform.includes("Mac")
+                        ? "⌘ + Z"
+                        : "Ctrl+Z",
+                    }),
+                  );
+                }}
+                onOptimizationNotice={(message, error) =>
+                  notify(message, { error })
                 }
                 onOptimizePrompt={async (data, signal) => {
                   const current = historyRef.current.present;
+                  const active = assistantModel.current;
+                  if (active?.projectId !== current.id || !active.selection)
+                    throw new Error(t("generation.optimize.agentLoading"));
                   if (!(await persist(current, false)))
                     throw new Error(t("generation.optimize.saveFailed"));
                   signal.throwIfAborted();
@@ -2021,6 +2039,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
                       ...apiJson("POST", {
                         ...data,
                         preferredModelId: rt.assistantModels.agent ?? null,
+                        assistantModel: active.selection,
                       }),
                       signal,
                     },
@@ -2598,6 +2617,7 @@ export function WorkspaceView({ rt }: { rt: WorkspaceRuntime }) {
           }}
           onTurnEnd={() => void syncServiceResults()}
           onModelSelections={setAssistantModels}
+          onAgentModel={onAgentModel}
           onPrepareReferences={() => persist(historyRef.current.present)}
           onOpenSettings={() => {
             setSettingsCategory("models");

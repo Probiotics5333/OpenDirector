@@ -80,6 +80,8 @@ export interface NodeComposerProps {
   ) => Promise<{ prompt: string; audioOmitted: boolean }>;
   onCancel: () => void;
   onPickReference: () => void;
+  /** Failures and warnings worth a canvas toast instead of an inline note. */
+  onOptimizationNotice?: (message: string, error: boolean) => void;
   running?: boolean;
 
   /** Models configured in the local API, usable alongside the catalog. */
@@ -114,6 +116,7 @@ export function NodeComposer({
   onOptimizePrompt,
   onCancel,
   onPickReference,
+  onOptimizationNotice,
   running = false,
   backendModels = [],
   onCheckModels,
@@ -139,10 +142,6 @@ export function NodeComposer({
   const [optimizing, setOptimizing] = useState(false);
   const panel = running || optimizing ? null : openPanel;
   const [optimizedText, setOptimizedText] = useState(lastOptimizedText);
-  const [optimizationStatus, setOptimizationStatus] = useState<{
-    message: string;
-    error: boolean;
-  }>();
   const latestRunning = useRef(running);
   latestRunning.current = running;
   const optimizationDraft = useRef("");
@@ -220,16 +219,12 @@ export function NodeComposer({
         (part.nodeId ? referenceControls?.referenceId(part.nodeId) : undefined),
     );
     if (inlineReferences.some((id) => !id)) {
-      setOptimizationStatus({
-        message: t("generation.optimize.changed"),
-        error: true,
-      });
+      onOptimizationNotice?.(t("generation.optimize.changed"), true);
       return;
     }
     const controller = new AbortController();
     pendingOptimization.current = controller;
     setPanel(null);
-    setOptimizationStatus(undefined);
     setOptimizing(true);
     try {
       const result = await onOptimizePrompt(
@@ -258,23 +253,18 @@ export function NodeComposer({
       const text = promptText(rewritten);
       setOptimizedText(text);
       onPromptOptimized?.(text);
-      setOptimizationStatus({
-        message: t(
-          result.audioOmitted
-            ? "generation.optimize.doneAudioOmitted"
-            : "generation.optimize.done",
-        ),
-        error: false,
-      });
+      // The completion notice is the toast; only an omitted audio caveat is
+      // extra, and it is a warning rather than a failure.
+      if (result.audioOmitted)
+        onOptimizationNotice?.(t("generation.optimize.doneAudioOmitted"), false);
     } catch (error) {
       if (!controller.signal.aborted)
-        setOptimizationStatus({
-          message:
-            error instanceof Error
-              ? error.message
-              : t("generation.optimize.failed"),
-          error: true,
-        });
+        onOptimizationNotice?.(
+          error instanceof Error
+            ? error.message
+            : t("generation.optimize.failed"),
+          true,
+        );
     } finally {
       if (pendingOptimization.current === controller) {
         pendingOptimization.current = null;
@@ -453,6 +443,7 @@ export function NodeComposer({
         title: selectedNode.data.title,
       })}
       running={running || optimizing}
+      optimizing={optimizing}
       onEscape={() => {
         setPanel(null);
         pendingOptimization.current?.abort();
@@ -662,16 +653,11 @@ export function NodeComposer({
                       : t("generation.prompt.audioPlaceholder")
           }
         />
-        {(optimizing ||
-          (optimizationStatus &&
-            (optimizationStatus.error || inputText === optimizedText))) && (
-          <p
-            className={`cw-composer-provider-note${optimizationStatus?.error ? "" : " cw-composer-optimization-note"}`}
-            role={optimizationStatus?.error ? "alert" : "status"}
-          >
-            {optimizing
-              ? t("generation.optimize.running")
-              : optimizationStatus?.message}
+        {optimizing && (
+          <p className="cw-composer-provider-note" role="status">
+            <span className="cw-optimizing-blink">
+              {t("generation.optimize.running")}
+            </span>
           </p>
         )}
         {backend && music && (

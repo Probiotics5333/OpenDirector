@@ -8,6 +8,7 @@ from pathlib import Path
 import re
 from shutil import copyfileobj
 import tempfile
+from typing import Literal
 from uuid import UUID
 
 from PIL import Image
@@ -15,6 +16,7 @@ from pydantic import BaseModel, ConfigDict, Field
 
 from opendirector.application.creation_assets import CreationAssets
 from opendirector.application.creation_canvas import resolve_reference
+from opendirector.domain.agent_runtime import RuntimeId
 from opendirector.domain.generation import GenerationError
 from opendirector.domain.input_rules import MAX_REFERENCES
 from opendirector.domain.projects import ProjectError
@@ -25,7 +27,12 @@ from opendirector.integrations.reference_inputs import data_uri, reference_text
 from opendirector.media.processing import Workspace, _run, open_image
 
 MARKER = re.compile(r"\[\[OD_REF_[1-9][0-9]*\]\]")
-SKILL = 'h3-prompt-optimization'
+SKILLS = {
+    'fasth3-omni': 'h3-official-prompt-optimization',
+    'vllm-omni-h3': 'h3-official-prompt-optimization',
+    'minimax-h3-official': 'h3-official-prompt-optimization',
+    'seedance-2.0': 'seedance-prompt-optimization',
+}
 MEDIA_PAYLOAD_LIMIT = 32 * 1024 * 1024
 MEDIA_FILE_LIMIT = MEDIA_PAYLOAD_LIMIT * 3 // 4
 VIDEO_MUXERS = {'video/mp4': 'mp4', 'video/webm': 'webm', 'video/quicktime': 'mov', 'video/ogg': 'ogg'}
@@ -37,11 +44,20 @@ Preserve literal provider tokens such as <Picture 1>, <Video 1>, and <Audio 1>. 
 Improve clarity and concrete visual direction without changing the requested scene. Return only the rewritten prompt, without a heading or code fence."""
 
 
+class AssistantModel(BaseModel):
+    model_config = ConfigDict(extra='forbid')
+    runtime: RuntimeId
+    modelId: UUID | None = None
+    runtimeModel: str | None = Field(default=None, max_length=200)
+    thinking: Literal['auto', 'low', 'medium', 'high'] = 'auto'
+
+
 class PromptOptimizationInput(BaseModel):
     model_config = ConfigDict(extra='forbid')
     prompt: str = Field(min_length=1, max_length=PROMPT_MAX_LENGTH)
     inlineReferences: list[UUID] = Field(default_factory=list, max_length=2000)
     preferredModelId: UUID | None = None
+    assistantModel: AssistantModel | None = None
 
 
 def compressed_image(data):
@@ -103,11 +119,14 @@ def media_file(stream, metadata, *, without_audio=False, convert_audio=False):
 
 
 class PromptOptimization:
-    def __init__(self, projects, configs, chat):
+    def __init__(self, projects, configs, chat, cli_rewrite=None):
         self.projects, self.configs, self.chat = projects, configs, chat
+        # The CLI bridge lives in the agent layer; composition injects it so the
+        # application service never imports agent or infrastructure modules.
+        self.cli_rewrite = cli_rewrite
         self.assets = CreationAssets(projects)
 
-    def _prepare(self, project_id, item_id, session, draft, inline, model_id):
+    def _prepare(self, project_id, item_id, session, draft, inline, model_id, native):
         if not MARKER.sub('', draft).strip():
             raise ProjectError('请先输入要优化的提示词。', 422, code='prompt_optimization_empty')
         markers = MARKER.findall(draft)
@@ -133,34 +152,29 @@ class PromptOptimization:
                 raise ProjectError('参考素材太多，请减少后重试。', 413)
         kinds = {source.asset.kind for _, source in sources}
         catalog = self.configs.list()
-        models = [r for r in catalog if r['kind'] == 'agent']
-        choices = []
-        for candidate in models:
-            inputs = candidate.get('inputModalities') or []
-            if 'image' in kinds and 'image' not in inputs:
-                continue
-            if 'video' in kinds and not {'image', 'video'}.intersection(inputs):
-                continue
-            choices.append(candidate)
-        choices.sort(key=lambda r: (
-            'video' in kinds and 'video' not in r['inputModalities'],
-            'audio' in kinds and 'audio' not in r['inputModalities'],
-        ))
-        chosen = next((r for r in choices if r['id'] == str(model_id)), choices[0] if choices else None)
-        if chosen is None:
-            if models:
-                raise ProjectError('请在模型设置中启用文本模型所支持的图片或视频输入，再优化含画面参考的提示词。',
+        config = None
+        inputs = ['text', 'image']
+        if not native:
+            models = [r for r in catalog if r['kind'] == 'agent' and (model_id is None or r['id'] == str(model_id))]
+            if not models:
+                raise ProjectError('请为右侧 Agent 选择可用的对话模型。', 409, code='prompt_optimization_model')
+            choices = [r for r in models if
+                       ('image' not in kinds or 'image' in r['inputModalities']) and
+                       ('video' not in kinds or {'image', 'video'}.intersection(r['inputModalities']))]
+            if not choices:
+                raise ProjectError('当前对话模型无法接收这些画面参考，请在右侧 Agent 选择支持图片或视频输入的模型。',
                                    409, code='prompt_optimization_vision')
-            raise ProjectError('请先在模型设置中配置文本模型。', 409, code='prompt_optimization_model')
-        config = self.configs.resolve(chosen['id'], 'agent')
-        inputs = config['inputModalities']
+            chosen = min(choices, key=lambda r: (
+                'video' in kinds and 'video' not in r['inputModalities'],
+                'audio' in kinds and 'audio' not in r['inputModalities'],
+            ))
+            config = self.configs.resolve(chosen['id'], 'agent')
+            inputs = config['inputModalities']
         accepts_video, accepts_audio = 'video' in inputs, 'audio' in inputs
         generation = next((r for r in catalog if spec and r['id'] == str(spec.modelConfigId)), {})
         mode = spec.parameters.videoMode if spec and spec.kind == 'video' else None
         profile = (generation.get('inputRules') or {}).get('profile')
-        skill = SKILL if item.kind == 'video' and profile in {
-            'fasth3-omni', 'vllm-omni-h3', 'minimax-h3-official',
-        } else None
+        skill = SKILLS.get(profile) if item.kind == 'video' else None
         rules = SYSTEM.format(kind=item.kind)
         if skill:
             rules += '\n\n' + (builtin_skills() / skill / 'SKILL.md').read_text(encoding='utf-8')
@@ -217,25 +231,47 @@ class PromptOptimization:
         return config, [{'role': 'system', 'content': rules},
                         {'role': 'user', 'content': user if len(user) > 1 else user[0]['text']}], skill, audio_omitted
 
-    async def rewrite(self, project_id, item_id, session, draft, inline, model_id=None):
+    async def rewrite(self, project_id, item_id, session, draft, inline, model_id=None, assistant_model=None):
+        native = assistant_model and assistant_model.runtime != 'default'
+        if native:
+            if self.cli_rewrite is None:
+                raise ProjectError('右侧 Agent 的 CLI 暂不支持独立的提示词优化，请在右侧切换 Agent 或模型。',
+                                   409, code='prompt_optimization_cli_unsupported')
+        elif assistant_model:
+            model_id = assistant_model.modelId
+            if model_id is None:
+                raise ProjectError('请为右侧 Agent 选择可用的对话模型。', 409, code='prompt_optimization_model')
         config, messages, skill, audio_omitted = await asyncio.to_thread(
-            self._prepare, project_id, item_id, session, draft, inline, model_id)
-        payload = chat_payload(config, messages, 'auto')
-        chunks, size = [], 0
+            self._prepare, project_id, item_id, session, draft, inline, model_id, native)
+        thinking = assistant_model.thinking if assistant_model else 'auto'
         try:
-            async with asyncio.timeout(110), aclosing(self.chat.stream(config, payload)) as events:
-                async for event in events:
-                    if event['type'] == 'delta':
-                        text = event['text']
-                        size += len(text)
-                        if size > PROMPT_MAX_LENGTH:
-                            raise ProjectError('优化结果过长，原提示词已保留。', 502, code='prompt_optimization_result')
-                        chunks.append(text)
+            async with asyncio.timeout(110):
+                if native:
+                    result = await self.cli_rewrite(assistant_model.runtime, assistant_model.runtimeModel,
+                                                    thinking, messages)
+                else:
+                    result = await self._configured_reply(config, messages, thinking)
         except (GenerationError, TimeoutError):
             raise ProjectError('文本模型优化失败，原提示词已保留。请检查文本模型配置后重试。',
                                502, code='prompt_optimization_provider') from None
-        result = ''.join(chunks).strip()
-        if (not result or not MARKER.sub('', result).strip() or
+        except (OSError, ValueError, KeyError, TypeError):
+            raise ProjectError('右侧 Agent 的 CLI 未完成提示词优化，请检查模型和登录。', 502,
+                               code='prompt_optimization_cli') from None
+        result = result.strip()
+        if (not result or len(result) > PROMPT_MAX_LENGTH or not MARKER.sub('', result).strip() or
                 MARKER.findall(result) != MARKER.findall(draft)):
             raise ProjectError('模型未返回有效提示词，原提示词已保留。', 502, code='prompt_optimization_result')
         return {'prompt': result, 'skill': skill, 'audioOmitted': audio_omitted}
+
+    async def _configured_reply(self, config, messages, thinking):
+        payload = chat_payload(config, messages, thinking)
+        chunks, size = [], 0
+        async with aclosing(self.chat.stream(config, payload)) as events:
+            async for event in events:
+                if event['type'] == 'delta':
+                    text = event['text']
+                    size += len(text)
+                    if size > PROMPT_MAX_LENGTH:
+                        raise ProjectError('优化结果过长，原提示词已保留。', 502, code='prompt_optimization_result')
+                    chunks.append(text)
+        return ''.join(chunks)

@@ -12,14 +12,16 @@ from PIL import Image
 import httpx
 import pytest
 
+from opendirector.application.prompt_optimization import SKILLS
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
+from opendirector.installation import builtin_skills
 from opendirector_api.main import create_app
 
 
 @pytest.mark.merge
-def test_rewrite_uses_actual_project_assets_and_h3_skill_without_generating(tmp_path):
+def test_rewrite_uses_actual_project_assets_and_h3_skill_without_generating(tmp_path, monkeypatch):
     received = []
     outputs = iter(['Keep the shot [[OD_REF_1]] and the spoken line.', 'Lost the inline reference.', 'Improved image.'])
 
@@ -75,10 +77,11 @@ def test_rewrite_uses_actual_project_assets_and_h3_skill_without_generating(tmp_
                           json={'prompt': 'Continue with [[OD_REF_1]]', 'inlineReferences': [reference_id]})
         assert response.status_code == 200, response.text
         assert response.json() == {'prompt': 'Keep the shot [[OD_REF_1]] and the spoken line.',
-                                   'skill': 'h3-prompt-optimization', 'audioOmitted': False}
+                                   'skill': SKILLS['fasth3-omni'], 'audioOmitted': False}
         first = received[0]
         assert first['model'] == vision['modelId']
-        assert '# H3 prompt optimization' in first['messages'][0]['content']
+        rules = (builtin_skills() / SKILLS['fasth3-omni'] / 'SKILL.md').read_text(encoding='utf-8')
+        assert rules in first['messages'][0]['content']
         parts = first['messages'][1]['content']
         assert 'Continue with [[OD_REF_1]]' in parts[0]['text']
         assert any(p.get('text') == 'Keep the exact spoken line.' for p in parts)
@@ -91,7 +94,70 @@ def test_rewrite_uses_actual_project_assets_and_h3_skill_without_generating(tmp_
         response = c.post(root + f'/items/{image_id}/optimize-prompt', json={'prompt': 'An image at dusk.'})
         assert response.status_code == 200 and response.json()['skill'] is None
         assert received[-1]['model'] == text['modelId']
+        rewrite_url = root + f'/items/{node_id}/optimize-prompt'
+        draft = {'prompt': 'Continue with [[OD_REF_1]]', 'inlineReferences': [reference_id]}
+        response = c.post(rewrite_url, json={**draft, 'assistantModel': {'runtime': 'default', 'modelId': text['id']}})
+        assert response.status_code == 409 and response.json()['code'] == 'prompt_optimization_vision'
+        response = c.post(rewrite_url, json={**draft, 'assistantModel': {'runtime': 'deepseek'}})
+        assert response.status_code == 409 and response.json()['code'] == 'prompt_optimization_cli_unsupported'
+
+        async def rewrite(runtime, model_id, thinking, messages):
+            assert (runtime, model_id, thinking) == ('codex', None, 'high')
+            assert rules in messages[0]['content']
+            assert any(part['type'] == 'image_url' for part in messages[1]['content'])
+            return 'Native model prompt with [[OD_REF_1]].'
+
+        monkeypatch.setattr('opendirector.agent.prompt_rewrite.rewrite', rewrite)
+        response = c.post(rewrite_url, json={**draft,
+            'assistantModel': {'runtime': 'codex', 'runtimeModel': None, 'thinking': 'high'}})
+        assert response.status_code == 200, response.text
+        assert response.json()['prompt'] == 'Native model prompt with [[OD_REF_1]].'
+        assert len(received) == 3
         assert c.get(root).json() == before
+
+
+@pytest.mark.merge
+def test_seedance_video_draft_uses_the_seedance_skill(tmp_path):
+    received = []
+
+    def model(request):
+        received.append(json.loads(request.content))
+        delta = {'choices': [{'delta': {'content': 'A five second product shot.'}, 'finish_reason': 'stop'}]}
+        return httpx.Response(200, text=f'data: {json.dumps(delta)}\n\ndata: [DONE]\n\n')
+
+    local = LocalProjects(tmp_path)
+    configs = ModelConfigs(tmp_path)
+    configs.save('agent', 'http://127.0.0.1:12345/v1', 'text-only', '', auth_mode='none')
+    video = configs.save('video', 'https://ark.cn-beijing.volces.com/api/plan/v3',
+                         'doubao-seedance-2.0', 'key')
+    project, node_id, spec_id = map(str, (uuid4() for _ in range(3)))
+    root = f'/api/creation/projects/{project}'
+    app = create_app(local, chat_provider=ChatCompletions(httpx.MockTransport(model)))
+    with TestClient(app, headers={'X-OpenDirector-Request': '1', 'X-OpenDirector-Session': str(uuid4())}) as c:
+        def command(kind, payload):
+            response = c.post(root + '/commands', json=dict(type=kind, projectId=project,
+                              commandId=str(uuid4()), payload=payload))
+            assert response.status_code == 200 and response.json()['status'] == 'applied', response.text
+
+        command('project.create', {'name': 'Seedance prompt optimization'})
+        assert c.post(root + '/open').status_code == 200
+        command('creation.batch', {'operations': [
+            {'type': 'generationSpec.create', 'payload': {'spec': {'id': spec_id, 'projectId': project,
+             'kind': 'video', 'modelConfigId': video['id'], 'purpose': 'generation',
+             'parameters': {'videoMode': 'reference', 'durationSeconds': 5,
+                            'aspectRatio': '16:9', 'resolution': '720P'}}}},
+            {'type': 'canvas.show', 'payload': {'item': {'id': node_id, 'projectId': project, 'kind': 'video',
+             'position': {'x': 0, 'y': 0}, 'binding': {'role': 'generation',
+             'objectRef': {'objectType': 'generation_spec', 'id': spec_id}}}}},
+        ]})
+        response = c.post(root + f'/items/{node_id}/optimize-prompt', json={'prompt': '一只猫在公园里玩球'})
+        assert response.status_code == 200, response.text
+        assert response.json()['skill'] == 'seedance-prompt-optimization'
+        system = received[0]['messages'][0]['content']
+        seedance = (builtin_skills() / 'seedance-prompt-optimization' / 'SKILL.md').read_text(encoding='utf-8')
+        assert seedance in system
+        h3 = (builtin_skills() / SKILLS['vllm-omni-h3'] / 'SKILL.md').read_text(encoding='utf-8')
+        assert h3 not in system
 
 
 @pytest.mark.merge

@@ -100,11 +100,11 @@ export const generation = {
   "generation.voice.demo": "Anime Sponge",
 
   "generation.optimize.action": "Optimize prompt",
+  "generation.optimize.agentLoading": "The Agent model selection is loading. Try again shortly.",
   "generation.optimize.alreadyDone": "This prompt is already optimized",
-  "generation.optimize.running": "Optimizing prompt…",
-  "generation.optimize.done": "Prompt optimized. Press Ctrl+Z to undo.",
-  "generation.optimize.doneAudioOmitted":
-    "Prompt optimized. Press Ctrl+Z to undo. Some audio was omitted.",
+  "generation.optimize.running": "Optimizing prompt...",
+  "generation.optimize.toast": "Prompt optimized. Press {shortcut} to undo.",
+  "generation.optimize.doneAudioOmitted": "Some audio was omitted.",
   "generation.optimize.changed":
     "The prompt or node changed. Your latest input was kept.",
   "generation.optimize.failed":

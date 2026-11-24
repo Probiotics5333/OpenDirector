@@ -1,0 +1,126 @@
+"""One-shot prompt completion in a native CLI with project tools disabled."""
+
+import asyncio
+from base64 import b64decode
+import json
+import os
+from pathlib import Path
+import shutil
+from tempfile import TemporaryDirectory
+
+from opendirector.agent import native
+from opendirector.agent.process import terminate
+from opendirector.domain.projects import ProjectError
+
+
+SUPPORTED = ('codex', 'claude')
+
+
+async def resolve_model(runtime, model):
+    """Resolve the Codex default model without importing the runtime module.
+
+    `agent.runtime` imports `agent.tools`, which reaches this module through the
+    prompt optimization service, so a top-level runtime import would cycle.
+    """
+    if runtime != 'codex' or model:
+        return model
+    from opendirector.agent.catalog import model_choices
+    choices = await model_choices('codex')
+    return next((item['id'] for item in choices if item.get('isDefault')), None)
+
+
+def cli_args(runtime, binary):
+    path = Path(binary)
+    if os.name != 'nt' or path.suffix.lower() not in ('.bat', '.cmd'):
+        return [binary]
+    # Execute the npm package directly so model flags never go through cmd.exe.
+    # Missing package entries fail at launch and become the same CLI error as a
+    # missing CLI; checking them here would only add an existence probe on a path
+    # that the configured launcher already owns.
+    if runtime == 'codex':
+        script = path.parent / 'node_modules/@openai/codex/bin/codex.js'
+        if node := shutil.which('node'):
+            return [node, str(script)]
+    else:
+        executable = path.parent / 'node_modules/@anthropic-ai/claude-code/bin/claude.exe'
+        return [str(executable)]
+    raise ProjectError('提示词优化需要可直接运行的 Agent CLI，请检查安装。', 503, code='prompt_optimization_cli')
+
+
+def codex_input(args, work, parts):
+    text = []
+    images = 0
+    for part in parts:
+        if part['type'] == 'text':
+            text.append(part['text'])
+            continue
+        images += 1
+        file = work / f'reference-{images}.jpg'
+        file.write_bytes(b64decode(part['image_url']['url'].split(',', 1)[1], validate=True))
+        args += ['--image', str(file)]
+        text.append(f'[Attached image {images}]')
+    return '\n\n'.join(text)
+
+
+async def rewrite(runtime, model, thinking, messages):
+    if runtime not in SUPPORTED:
+        raise ProjectError('右侧 Agent 的 CLI 暂不支持独立的提示词优化，请在右侧切换 Agent 或模型。',
+                           409, code='prompt_optimization_cli_unsupported')
+    binary = native.executable(runtime)
+    if not binary:
+        raise ProjectError('提示词优化需要已安装并登录右侧 Agent 的 CLI。', 503, code='prompt_optimization_cli')
+    args = cli_args(runtime, binary)
+    model = await resolve_model(runtime, model)
+    rules, user = (message['content'] for message in messages)
+    parts = [{'type': 'text', 'text': user}] if isinstance(user, str) else user
+    with TemporaryDirectory(prefix='od-prompt-cli-') as directory:
+        work = Path(directory)
+        env = native.codex_environment() if runtime == 'codex' else None
+        if runtime == 'codex':
+            flags = await asyncio.to_thread(native.codex_isolation_flags, binary)
+            args += ['exec', '--json', '--ephemeral', '--skip-git-repo-check', *flags, '--sandbox', 'read-only',
+                    '-c', 'approval_policy="never"', '-c', 'features.shell_tool=false',
+                    '-c', 'features.apply_patch_freeform=false', '-c', 'web_search="disabled"',
+                    '-c', 'skills.bundled.enabled=false', '-c', 'mcp_servers={}',
+                    '-c', f'developer_instructions={json.dumps(rules, ensure_ascii=False)}']
+            if os.name == 'nt':
+                args += ['-c', 'windows.sandbox="elevated"']
+            if thinking != 'auto':
+                args += ['-c', f'model_reasoning_effort={json.dumps(thinking)}']
+            if model:
+                args += ['--model', model]
+            data = codex_input(args, work, parts)
+            args += ['--', '-']
+        else:
+            args += ['-p', '--verbose', '--input-format', 'stream-json', '--output-format', 'stream-json',
+                    '--no-session-persistence', '--tools', '', '--strict-mcp-config',
+                    '--mcp-config', '{"mcpServers":{}}', '--setting-sources', '', '--system-prompt', rules]
+            if thinking != 'auto':
+                args += ['--effort', thinking]
+            if model:
+                args += ['--model', model]
+            content = [part if part['type'] == 'text' else {'type': 'image', 'source': {
+                'type': 'base64', 'media_type': 'image/jpeg', 'data': part['image_url']['url'].split(',', 1)[1]
+            }} for part in parts]
+            data = json.dumps({'type': 'user', 'message': {'role': 'user', 'content': content}}, ensure_ascii=False)
+        try:
+            process = await asyncio.create_subprocess_exec(*args, cwd=work, env=env,
+                stdin=asyncio.subprocess.PIPE, stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.DEVNULL, start_new_session=True)
+        except OSError as error:
+            raise ProjectError('提示词优化需要可直接运行的 Agent CLI，请检查安装。', 503,
+                code='prompt_optimization_cli') from error
+        try:
+            output, _ = await process.communicate((data + '\n').encode())
+            if process.returncode != 0:
+                raise ProjectError('右侧 Agent 的 CLI 未完成提示词优化，请检查模型和登录。', 502, code='prompt_optimization_cli')
+            records = [json.loads(line) for line in output.splitlines() if line.strip()]
+            if runtime == 'codex' and any(row.get('type') == 'turn.completed' for row in records):
+                return next((row['item']['text'] for row in reversed(records)
+                    if row.get('type') == 'item.completed' and row['item']['type'] == 'agent_message'), '')
+            if runtime == 'claude':
+                return next((row['result'] for row in reversed(records)
+                    if row.get('type') == 'result' and row.get('subtype') == 'success'), '')
+            return ''
+        finally:
+            await terminate(process, group=True)

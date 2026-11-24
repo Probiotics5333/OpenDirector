@@ -88,7 +88,7 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
                                   x_opendirector_session: UUID = Header()):
             return await prompt_optimization.rewrite(
                 project_id, item_id, str(x_opendirector_session), value.prompt,
-                value.inlineReferences, value.preferredModelId)
+                value.inlineReferences, value.preferredModelId, value.assistantModel)
 
     @router.get('/projects')
     def list_projects():
