@@ -167,24 +167,29 @@ def test_prompt_preview_disconnect_closes_model_stream(tmp_path, monkeypatch):
 
 
 @pytest.mark.merge
-@pytest.mark.parametrize('runtime', ['codex', 'claude'])
-def test_windows_prompt_cli_uses_existing_package_entry(tmp_path, monkeypatch, runtime):
+@pytest.mark.parametrize(('runtime', 'package_entry'), [
+    ('codex', 'node_modules/@openai/codex/bin/codex.js'),
+    ('claude', 'node_modules/@anthropic-ai/claude-code/bin/claude.exe'),
+])
+def test_windows_prompt_cli_uses_existing_package_entry(tmp_path, monkeypatch, runtime, package_entry):
     monkeypatch.setattr(prompt_rewrite, 'os', SimpleNamespace(name='nt'))
     launcher = tmp_path / f'{runtime}.cmd'
     launcher.touch()
-    entry = tmp_path / prompt_rewrite.NPM_ENTRY[runtime]
+    entry = tmp_path / package_entry
     node = tmp_path / 'node.exe'
     node.touch()
     monkeypatch.setattr(prompt_rewrite.shutil, 'which', lambda _: str(node))
+    monkeypatch.setattr(prompt_rewrite.native, 'executable', {runtime: str(launcher)}.__getitem__)
 
     with pytest.raises(ProjectError):
-        prompt_rewrite.cli_args(runtime, str(launcher))
+        prompt_rewrite.cli_args(runtime)
     entry.parent.mkdir(parents=True)
     entry.touch()
     expected = [str(node), str(entry)] if runtime == 'codex' else [str(entry)]
-    assert prompt_rewrite.cli_args(runtime, str(launcher)) == expected
+    assert prompt_rewrite.cli_args(runtime) == expected
+    monkeypatch.setattr(prompt_rewrite.native, 'executable', {runtime: launcher.name}.__getitem__)
     with pytest.raises(ProjectError):
-        prompt_rewrite.cli_args(runtime, launcher.name)
+        prompt_rewrite.cli_args(runtime)
 
 
 @pytest.mark.merge

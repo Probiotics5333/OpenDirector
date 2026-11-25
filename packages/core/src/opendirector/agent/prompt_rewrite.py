@@ -13,12 +13,6 @@ from opendirector.agent.process import terminate
 from opendirector.domain.projects import ProjectError
 
 
-NPM_ENTRY = {
-    'codex': 'node_modules/@openai/codex/bin/codex.js',
-    'claude': 'node_modules/@anthropic-ai/claude-code/bin/claude.exe',
-}
-
-
 async def resolve_model(runtime, model):
     """Resolve the Codex default model without importing the runtime module.
 
@@ -32,7 +26,22 @@ async def resolve_model(runtime, model):
     return next((item['id'] for item in choices if item.get('isDefault')), None)
 
 
-def cli_args(runtime, binary):
+def cli_args(runtime):
+    # A request chooses one of these adapters. It never names the executable
+    # to look up or any component of its installation path.
+    if runtime == 'codex':
+        binary = native.executable('codex')
+        command = 'codex'
+        package_entry = 'node_modules/@openai/codex/bin/codex.js'
+    elif runtime == 'claude':
+        binary = native.executable('claude')
+        command = 'claude'
+        package_entry = 'node_modules/@anthropic-ai/claude-code/bin/claude.exe'
+    else:
+        raise ProjectError('右侧 Agent 的 CLI 暂不支持独立的提示词优化，请在右侧切换 Agent 或模型。',
+                           409, code='prompt_optimization_cli_unsupported')
+    if not binary:
+        raise ProjectError('提示词优化需要已安装并登录右侧 Agent 的 CLI。', 503, code='prompt_optimization_cli')
     # Discovery supplies an installed launcher. Do not resolve a relative
     # executable against the temporary prompt directory.
     path = Path(binary)
@@ -41,11 +50,11 @@ def cli_args(runtime, binary):
     # Execute only the known npm entry inside the discovered Windows
     # installation. Never relay request arguments through a batch wrapper.
     if (os.name == 'nt' and path.is_absolute() and path.is_file()
-            and path.stem.lower() == runtime and path.suffix.lower() in {'.bat', '.cmd'}):
+            and path.stem.lower() == command and path.suffix.lower() in {'.bat', '.cmd'}):
         root = path.parent.resolve()
-        entry = (root / NPM_ENTRY[runtime]).resolve()
+        entry = (root / package_entry).resolve()
         if entry.is_relative_to(root) and entry.is_file():
-            if runtime == 'claude':
+            if command == 'claude':
                 return [str(entry)]
             node = shutil.which('node.exe')
             if node and Path(node).is_absolute() and Path(node).is_file():
@@ -69,13 +78,7 @@ def codex_input(args, work, parts):
 
 
 async def rewrite(runtime, model, thinking, messages):
-    if runtime not in NPM_ENTRY:
-        raise ProjectError('右侧 Agent 的 CLI 暂不支持独立的提示词优化，请在右侧切换 Agent 或模型。',
-                           409, code='prompt_optimization_cli_unsupported')
-    binary = native.executable(runtime)
-    if not binary:
-        raise ProjectError('提示词优化需要已安装并登录右侧 Agent 的 CLI。', 503, code='prompt_optimization_cli')
-    args = cli_args(runtime, binary)
+    args = cli_args(runtime)
     model = await resolve_model(runtime, model)
     rules, user = (message['content'] for message in messages)
     parts = [{'type': 'text', 'text': user}] if isinstance(user, str) else user
