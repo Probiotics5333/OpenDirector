@@ -1,9 +1,11 @@
 from io import BytesIO
+import asyncio
 import base64
 import json
 from pathlib import Path
 import shutil
 import subprocess
+from types import SimpleNamespace
 from uuid import uuid4
 import wave
 
@@ -13,6 +15,8 @@ import httpx
 import pytest
 
 from opendirector.application.prompt_optimization import SKILLS
+from opendirector.agent import prompt_rewrite
+from opendirector.domain.projects import ProjectError
 from opendirector.infrastructure.local_projects import LocalProjects
 from opendirector.infrastructure.model_configs import ModelConfigs
 from opendirector.integrations.chat_completions import ChatCompletions
@@ -73,7 +77,10 @@ def test_rewrite_uses_actual_project_assets_and_h3_skill_without_generating(tmp_
         ]
         command('creation.batch', {'operations': operations})
         before = c.get(root).json()
+        # The original browser still holds the editing lease. A separate
+        # caller can rewrite from the saved snapshot without opening it.
         response = c.post(root + f'/items/{node_id}/optimize-prompt',
+                          headers={'X-OpenDirector-Session': str(uuid4())},
                           json={'prompt': 'Continue with [[OD_REF_1]]', 'inlineReferences': [reference_id]})
         assert response.status_code == 200, response.text
         assert response.json() == {'prompt': 'Keep the shot [[OD_REF_1]] and the spoken line.',
@@ -114,6 +121,70 @@ def test_rewrite_uses_actual_project_assets_and_h3_skill_without_generating(tmp_
         assert response.json()['prompt'] == 'Native model prompt with [[OD_REF_1]].'
         assert len(received) == 3
         assert c.get(root).json() == before
+
+
+@pytest.mark.merge
+def test_prompt_preview_disconnect_closes_model_stream(tmp_path, monkeypatch):
+    from opendirector.application.prompt_optimization import PromptOptimization
+
+    async def run():
+        entered, closed = asyncio.Event(), asyncio.Event()
+
+        async def prepare_reply(self, *_):
+            entered.set()
+            try:
+                await asyncio.Event().wait()
+            finally:
+                closed.set()
+
+        monkeypatch.setattr(PromptOptimization, 'rewrite', prepare_reply)
+        app = create_app(LocalProjects(tmp_path))
+        path = f'/api/creation/projects/{uuid4()}/items/{uuid4()}/optimize-prompt'
+        body = {'type': 'http.request', 'body': b'{"prompt":"A shot"}', 'more_body': False}
+
+        async def receive():
+            if body:
+                request = dict(body)
+                body.clear()
+                return request
+            await entered.wait()
+            return {'type': 'http.disconnect'}
+
+        async def send(_):
+            pass
+
+        scope = dict(type='http', asgi={'version': '3.0'}, http_version='1.1', method='POST',
+                     scheme='http', path=path, raw_path=path.encode(), query_string=b'',
+                     server=('testserver', 80), client=('127.0.0.1', 12345),
+                     headers=[(b'host', b'testserver'), (b'content-type', b'application/json'),
+                              (b'x-opendirector-request', b'1'),
+                              (b'x-opendirector-session', str(uuid4()).encode())])
+        async with app.router.lifespan_context(app):
+            await asyncio.wait_for(app(scope, receive, send), 2)
+        assert entered.is_set() and closed.is_set()
+
+    asyncio.run(run())
+
+
+@pytest.mark.merge
+@pytest.mark.parametrize('runtime', ['codex', 'claude'])
+def test_windows_prompt_cli_uses_existing_package_entry(tmp_path, monkeypatch, runtime):
+    monkeypatch.setattr(prompt_rewrite, 'os', SimpleNamespace(name='nt'))
+    launcher = tmp_path / f'{runtime}.cmd'
+    launcher.touch()
+    entry = tmp_path / prompt_rewrite.NPM_ENTRY[runtime]
+    node = tmp_path / 'node.exe'
+    node.touch()
+    monkeypatch.setattr(prompt_rewrite.shutil, 'which', lambda _: str(node))
+
+    with pytest.raises(ProjectError):
+        prompt_rewrite.cli_args(runtime, str(launcher))
+    entry.parent.mkdir(parents=True)
+    entry.touch()
+    expected = [str(node), str(entry)] if runtime == 'codex' else [str(entry)]
+    assert prompt_rewrite.cli_args(runtime, str(launcher)) == expected
+    with pytest.raises(ProjectError):
+        prompt_rewrite.cli_args(runtime, launcher.name)
 
 
 @pytest.mark.merge

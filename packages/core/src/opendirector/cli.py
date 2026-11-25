@@ -546,7 +546,6 @@ def optimize_prompt(ctx: typer.Context,
     if client.live:
         emit(client.call("prompt_optimize", {"itemId": str(item), **data}))
     else:
-        client.open()
         emit(client.request("POST", client.path(f"/items/{item}/optimize-prompt"), json=data))
 
 

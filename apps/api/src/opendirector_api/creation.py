@@ -60,6 +60,25 @@ class TemporaryPackageResponse(FileResponse):
             Path(self.path).unlink(missing_ok=True)
 
 
+async def preview_until_disconnect(request: Request, operation):
+    async def disconnected():
+        # FastAPI has consumed the body. Read ASGI events directly so this
+        # also works through BaseHTTPMiddleware's receive stream.
+        while (await request.receive())['type'] != 'http.disconnect':
+            pass
+
+    work = asyncio.create_task(operation)
+    disconnect = asyncio.create_task(disconnected())
+    try:
+        done, _ = await asyncio.wait((work, disconnect), return_when=asyncio.FIRST_COMPLETED)
+        return await work if work in done else Response(status_code=499)
+    finally:
+        for task in (work, disconnect):
+            if not task.done():
+                task.cancel()
+        await asyncio.gather(work, disconnect, return_exceptions=True)
+
+
 def creation_routes(projects: CreationProjects, generation=None, prompt_optimization=None):
     router = APIRouter(prefix='/api/creation', tags=['Unified creation projects'])
     assets = CreationAssets(projects)
@@ -84,11 +103,10 @@ def creation_routes(projects: CreationProjects, generation=None, prompt_optimiza
 
     if prompt_optimization is not None:
         @router.post('/projects/{project_id}/items/{item_id}/optimize-prompt')
-        async def optimize_prompt(project_id: UUID, item_id: UUID, value: PromptOptimizationInput,
-                                  x_opendirector_session: UUID = Header()):
-            return await prompt_optimization.rewrite(
-                project_id, item_id, str(x_opendirector_session), value.prompt,
-                value.inlineReferences, value.preferredModelId, value.assistantModel)
+        async def optimize_prompt(project_id: UUID, item_id: UUID, value: PromptOptimizationInput, request: Request):
+            return await preview_until_disconnect(request, prompt_optimization.rewrite(
+                project_id, item_id, value.prompt, value.inlineReferences,
+                value.preferredModelId, value.assistantModel))
 
     @router.get('/projects')
     def list_projects():

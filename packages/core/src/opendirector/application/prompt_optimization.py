@@ -126,13 +126,13 @@ class PromptOptimization:
         self.cli_rewrite = cli_rewrite
         self.assets = CreationAssets(projects)
 
-    def _prepare(self, project_id, item_id, session, draft, inline, model_id, native):
+    def _prepare(self, project_id, item_id, draft, inline, model_id, native):
         if not MARKER.sub('', draft).strip():
             raise ProjectError('请先输入要优化的提示词。', 422, code='prompt_optimization_empty')
         markers = MARKER.findall(draft)
         if markers != [f'[[OD_REF_{i}]]' for i in range(1, len(inline) + 1)]:
             raise ProjectError('提示词引用已变化，请重试。', 409, code='prompt_optimization_refs')
-        snapshot = self.projects.open(project_id, session)
+        snapshot = self.projects.snapshot(project_id)
         item = next((i for i in snapshot.canvasItems if i.id == item_id), None)
         if not item or item.kind not in {'image', 'video'}:
             raise ProjectError('请选择图片或视频节点。', 404, code='prompt_optimization_node')
@@ -231,7 +231,7 @@ class PromptOptimization:
         return config, [{'role': 'system', 'content': rules},
                         {'role': 'user', 'content': user if len(user) > 1 else user[0]['text']}], skill, audio_omitted
 
-    async def rewrite(self, project_id, item_id, session, draft, inline, model_id=None, assistant_model=None):
+    async def rewrite(self, project_id, item_id, draft, inline, model_id=None, assistant_model=None):
         native = assistant_model and assistant_model.runtime != 'default'
         if native:
             if self.cli_rewrite is None:
@@ -242,7 +242,7 @@ class PromptOptimization:
             if model_id is None:
                 raise ProjectError('请为右侧 Agent 选择可用的对话模型。', 409, code='prompt_optimization_model')
         config, messages, skill, audio_omitted = await asyncio.to_thread(
-            self._prepare, project_id, item_id, session, draft, inline, model_id, native)
+            self._prepare, project_id, item_id, draft, inline, model_id, native)
         thinking = assistant_model.thinking if assistant_model else 'auto'
         try:
             async with asyncio.timeout(110):

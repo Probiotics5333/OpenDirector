@@ -334,7 +334,7 @@ class AgentTools:
             value = PromptOptimizationInput.model_validate({k: v for k, v in arguments.items() if k != 'itemId'})
             selection = AssistantModel(runtime=native_runtime or 'default', modelId=(config or {}).get('id'),
                 runtimeModel=runtime_model, thinking=thinking) if native_runtime or config else None
-            return await self.prompt_optimization.rewrite(project_id, item_id, session, value.prompt,
+            return await self.prompt_optimization.rewrite(project_id, item_id, value.prompt,
                 value.inlineReferences, value.preferredModelId, selection)
         if name in {'timeline_package_export', 'timeline_package_import'}:
             with self.projects.local.transaction() as db:
