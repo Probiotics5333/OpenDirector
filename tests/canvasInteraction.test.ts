@@ -300,6 +300,33 @@ test("canvas shortcuts map to history, selection, import, and nudges", () => {
   assert.deepEqual(undo(history).present.nodes[0]!.position, { x: 5, y: 6 });
 });
 
+test("image generation can submit with just a preset and keeps its draft prompt empty", () => {
+  const image = model("image");
+  const node = createNode("image", undefined, {
+    settings: {
+      ...generationDefaults("image"),
+      modelConfigId: image.id,
+      imagePreset: "four-view",
+      resolution: "auto",
+      aspectRatio: "auto",
+    },
+  });
+  const input = {
+    document: createDocument(),
+    node,
+    incoming: [],
+    models: [image],
+    assets: [],
+  };
+  assert.equal(serviceGenerationPlan(input).status, "blocked");
+  const plan = serviceGenerationPlan({
+    ...input,
+    promptPrefix: "Generate a character four-view sheet.",
+  });
+  assert.equal(plan.status, "ready", plan.status === "blocked" ? (plan.message ?? "") : "");
+  if (plan.status === "ready") assert.equal(plan.request.prompt, "");
+});
+
 test("generation submission marks unused inputs context-only and keeps one audio run", () => {
   const video = model("video");
   const first = ready("image");

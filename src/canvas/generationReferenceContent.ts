@@ -9,6 +9,7 @@ import {
   type ReferenceContent,
 } from "./chatReferenceContent.ts";
 import { tNow } from "../i18n/messages.ts";
+import { presetPart } from "./promptSkill.ts";
 
 export function generationPrompt(node: CanvasNode) {
   return node.type === "audio" && node.data.promptContent !== undefined
@@ -20,9 +21,13 @@ export function generationPrompt(node: CanvasNode) {
 export function incomingReferenceNodes(
   document: CanvasDocument,
   targetId: string | null | undefined,
+  includeHidden = false,
 ) {
-  const visible = new Map(document.nodes.map((node) => [node.id, node]));
-  const target = targetId && visible.get(targetId);
+  const sources = includeHidden && document.hiddenNodes?.length
+    ? [...document.nodes, ...document.hiddenNodes]
+    : document.nodes;
+  const nodes = new Map(sources.map((node) => [node.id, node]));
+  const target = targetId && nodes.get(targetId);
   const edges = document.edges.filter(
     (edge) =>
       edge.intent !== "post_edit_result" &&
@@ -41,7 +46,7 @@ export function incomingReferenceNodes(
     : [];
   return [...new Set([...mentioned, ...edges.map((edge) => edge.source)])]
     .filter((id) => connected.has(id))
-    .flatMap((id) => visible.get(id) ?? []);
+    .flatMap((id) => nodes.get(id) ?? []);
 }
 
 /** Editor identities follow logical sources, independent of a file's current URL. */
@@ -103,7 +108,9 @@ export function generationContentPatch(
   const mentions: NonNullable<CanvasNodeData["promptMentions"]> = [];
   for (const part of content) {
     if (part.type === "text") prompt += part.text;
-    else if (part.type === "skill") prompt += `/${part.name}`;
+    // A preset chip is not text: its instructions travel beside the prompt.
+    else if (part.type === "skill")
+      prompt += part.preset ? "" : `/${part.name}`;
     else {
       const label = `@${part.name}`;
       mentions.push({
@@ -117,8 +124,31 @@ export function generationContentPatch(
   }
   return {
     prompt,
-    promptContent: normalizeContent(content),
+    promptContent: normalizeContent(content.filter((part) => part.type !== "skill" || !part.preset)),
     promptMentions: mentions,
+  };
+}
+
+/** The preset chip projects settings and is never serialized as prompt text. */
+export function generationEditorPatch(
+  node: CanvasNode,
+  content: ReferenceContent,
+  presetEdited = false,
+): Partial<CanvasNodeData> {
+  const patch = generationContentPatch(content);
+  const settings = node.data.settings;
+  if (!settings) return patch;
+  const preset = presetEdited && node.type === "image" ? presetPart(content) : undefined;
+  return {
+    ...patch,
+    settings: {
+      ...settings,
+      prompt: patch.prompt,
+      ...(presetEdited && node.type === "image" ? {
+        imagePreset: preset?.preset ?? "none",
+        faceEmphasis: preset?.preset === "four-view" && preset.faceEmphasis === true,
+      } : {}),
+    },
   };
 }
 

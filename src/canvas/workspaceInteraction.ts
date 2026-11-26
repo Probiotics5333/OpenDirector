@@ -12,6 +12,7 @@ import { assistantReferences } from "./assistantReferences.ts";
 import type { PortSide } from "./connectionPorts.ts";
 import { getNodeGenerationSettings } from "./generationSettings.ts";
 import { generationContent } from "./generationReferenceContent.ts";
+import { promptWithPreset } from "./promptSkill.ts";
 import type { ResultSource } from "./linkedResults.ts";
 import {
   createNode,
@@ -364,11 +365,14 @@ export function serviceGenerationPlan(input: {
   incoming: readonly CanvasNode[];
   models: readonly ModelConfig[];
   assets: readonly SubmissionAsset[];
+  /** Preset instructions used to preflight the effective prompt. */
+  promptPrefix?: string;
 }): ServiceGenerationPlan {
   const settings = getNodeGenerationSettings(input.node, input.models);
   const config = backendModel(settings, input.models);
   const pinned = pinnedPrecheckNodes(input);
-  const blocked = backendBlocker(settings, input.incoming, input.models, pinned);
+  const checkedSettings = { ...settings, prompt: promptWithPreset(settings.prompt, input.promptPrefix) };
+  const blocked = backendBlocker(checkedSettings, input.incoming, input.models, pinned);
   if (blocked || !config)
     return { status: "blocked", message: blocked };
   const references = backendReferences(settings, input.incoming, config);
