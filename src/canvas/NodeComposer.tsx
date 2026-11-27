@@ -4,6 +4,7 @@ import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
 import { providerLabel } from "./providerPresets";
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import {
   normalizeContent,
   presetOnlyContent,
@@ -175,6 +176,10 @@ export function NodeComposer({
     null,
   );
   const [presetCopied, setPresetCopied] = useState(false);
+  /** Hover hint for the preset selector, anchored to its own rect. */
+  const [presetHint, setPresetHint] = useState<{ x: number; y: number } | null>(
+    null,
+  );
   const presetValue = selectedNode?.type === "image"
     ? selectedNode.data.settings?.imagePreset ?? "none"
     : "none";
@@ -982,6 +987,30 @@ export function NodeComposer({
           </button>
           <div className="cw-generation-mode-controls">
             {mode === "image" && (
+              <span
+                className="cw-preset-select"
+                onPointerEnter={(event) => {
+                  if (event.pointerType === "touch" || event.buttons) return;
+                  if (running || optimizing) return;
+                  const rect = event.currentTarget.getBoundingClientRect();
+                  setPresetHint({
+                    x: Math.max(16, Math.min(innerWidth - 16, rect.left + rect.width / 2)),
+                    y: rect.top - 8,
+                  });
+                }}
+                onPointerLeave={() => setPresetHint(null)}
+                onPointerDown={() => setPresetHint(null)}
+                onFocus={() => {
+                  if (running || optimizing) return;
+                  const rect = document.activeElement?.getBoundingClientRect();
+                  if (!rect) return;
+                  setPresetHint({
+                    x: Math.max(16, Math.min(innerWidth - 16, rect.left + rect.width / 2)),
+                    y: rect.top - 8,
+                  });
+                }}
+                onBlur={() => setPresetHint(null)}
+              >
               <select
                 aria-label={t("generation.imagePreset")}
                 value={presetValue}
@@ -1002,6 +1031,7 @@ export function NodeComposer({
                   </option>
                 )}
               </select>
+              </span>
             )}
             {mode === "video" && (
               <select
@@ -1573,6 +1603,21 @@ export function NodeComposer({
           )}
         </ComposerPopover>
       )}
+      {presetHint &&
+        createPortal(
+          <div
+            className="cw-tooltip"
+            role="tooltip"
+            style={{
+              left: presetHint.x,
+              top: presetHint.y,
+              transform: "translate(-50%, -100%)",
+            }}
+          >
+            <span>{t("generation.preset.hint")}</span>
+          </div>,
+          document.body,
+        )}
     </GenerationComposerShell>
   );
 }

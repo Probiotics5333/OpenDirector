@@ -29,6 +29,7 @@ export const generation = {
   "generation.imagePreset": "Image presets",
   "generation.videoMode": "Video mode",
   "generation.preset.none": "Free creation",
+  "generation.preset.hint": "Choose a preset image style",
   "generation.preset.productViews": "Product three views",
   "generation.preset.demo": "Local interaction demo",
   "generation.preset.audioWorkflow": "Local audio workflow",

@@ -27,6 +27,7 @@ export const generation = {
   "generation.imagePreset": "图片创作预设",
   "generation.videoMode": "视频创作模式",
   "generation.preset.none": "自由创作",
+  "generation.preset.hint": "选择预设图片样式",
   "generation.preset.productViews": "产品三视图",
   "generation.preset.demo": "本地交互演示",
   "generation.preset.audioWorkflow": "本地音频工作流",

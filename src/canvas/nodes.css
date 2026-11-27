@@ -1109,6 +1109,12 @@
 .cw-generation-mode-controls {
   display: contents;
 }
+
+.cw-preset-select {
+  display: inline-flex;
+  align-items: center;
+  min-width: 0;
+}
 .cw-composer-options .cw-generation-mode-controls select,
 .cw-composer-options .cw-generation-mode-controls input {
   min-width: 0;
