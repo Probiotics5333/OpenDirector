@@ -984,6 +984,7 @@ export function NodeComposer({
             {mode === "image" && (
               <select
                 aria-label={t("generation.imagePreset")}
+                title={t("generation.preset.hint")}
                 value={presetValue}
                 disabled={running || optimizing}
                 onChange={(event) => applyPreset(event.target.value)}
