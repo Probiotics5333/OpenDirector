@@ -196,6 +196,9 @@ async def test_image_preset_freezes_the_instructions_for_the_available_inputs(
         assert len(provider.calls) == 2
         for call in provider.calls:
             assert len(call['referenceIds']) == int(bool(with_reference))
+            if face_emphasis:
+                assert '眼睛、鼻子和嘴留在画外' in call['prompt']
+                assert all(detail not in call['prompt'] for detail in ('卡通角色', '大头', '短颈', '无颈', '下巴'))
             assert ('参考图' in call['prompt']) == bool(with_reference)
             assert call['prompt'] == (f'{expected}\n\n{user_prompt}' if user_prompt else expected)
             assert call['promptContent'] == (

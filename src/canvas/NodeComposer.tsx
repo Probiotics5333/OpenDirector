@@ -121,14 +121,14 @@ function clockTime(seconds: number) {
 /** Built-in demo voice id; the visible label is localized separately. */
 const DEMO_VOICE = "动漫海绵";
 
-/** One-line summary shown beside a preset chip while the prompt is empty. */
-const PRESET_DESCRIPTIONS: Record<string, MessageKey> = {
-  "three-view": "generation.preset.description.three-view",
-  "four-view": "generation.preset.description.four-view",
-  "face-three-view": "generation.preset.description.face-three-view",
-  "product-three-view": "generation.preset.description.product-three-view",
-  storyboard: "generation.preset.description.storyboard",
-  "multi-camera": "generation.preset.description.multi-camera",
+/** Help shown beside a preset chip while the prompt is empty. */
+const PRESET_HELP: Record<string, { description: MessageKey; ratios: readonly string[] }> = {
+  "three-view": { description: "generation.preset.description.three-view", ratios: ["16:9", "3:2"] },
+  "four-view": { description: "generation.preset.description.four-view", ratios: ["21:9", "16:9", "3:2"] },
+  "face-three-view": { description: "generation.preset.description.face-three-view", ratios: ["21:9", "16:9", "3:2"] },
+  "product-three-view": { description: "generation.preset.description.product-three-view", ratios: ["16:9", "3:2"] },
+  storyboard: { description: "generation.preset.description.storyboard", ratios: ["16:9", "3:2"] },
+  "multi-camera": { description: "generation.preset.description.multi-camera", ratios: ["16:9", "3:2"] },
 };
 
 export function NodeComposer({
@@ -486,12 +486,17 @@ export function NodeComposer({
         : next,
     });
   };
-  const presetDescriptionKey = activePreset
-    ? PRESET_DESCRIPTIONS[activePreset.value]
-    : undefined;
-  const presetDescription = presetDescriptionKey
+  const presetHelp = activePreset ? PRESET_HELP[activePreset.value] : undefined;
+  const availableRatios = config ? backendAspectRatios(settings, config) : undefined;
+  const recommendedRatio = availableRatios
+    ? presetHelp?.ratios.find((ratio) => availableRatios.includes(ratio))
+    : presetHelp?.ratios[0];
+  const presetDescription = presetHelp
     ? [
-        t(presetDescriptionKey),
+        t(presetHelp.description),
+        ...(recommendedRatio
+          ? [t("generation.preset.description.recommendedRatio", { ratio: recommendedRatio })]
+          : []),
         ...(faceEmphasis
           ? [t("generation.preset.description.faceEmphasis")]
           : []),

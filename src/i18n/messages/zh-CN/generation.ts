@@ -50,12 +50,12 @@ export const generation = {
     "为同一场景设计远景、中景、近景和特写。可上传参考图，也可用文字描述场景与动作。",
   "generation.preset.description.multi-camera":
     "以正面、左前方、右前方和俯视四个机位呈现同一场景。可上传参考图，也可用文字描述主体与环境。",
-  "generation.preset.description.faceEmphasis":
-    "另外，前两格从下巴下沿取景，突出正面五官。",
+  "generation.preset.description.recommendedRatio": "推荐画面比例 {ratio}。",
+  "generation.preset.description.faceEmphasis": "人物正视图和侧视图的五官会留在画面外，以强调正脸特写。",
   "generation.preset.faceEmphasis": "脸部强调",
   "generation.preset.labelWithEmphasis": "{preset}（{emphasis}）",
   "generation.preset.faceEmphasisHint":
-    "开启后，前两格从下巴下沿取景，只保留颈部和脸，突出正面五官，适合需要看清脸部的角色设定。",
+    "开启后，正面和侧面从肩颈向下取景，正脸集中在第四格。",
   "generation.preset.tune": "调节",
   "generation.preset.remove": "移除预设",
   "generation.preset.view": "查看{preset}的提示词",

@@ -53,12 +53,13 @@ export const generation = {
     "Plans wide, medium, close and detail shots of the same scene. Upload a reference image or describe the setting and action.",
   "generation.preset.description.multi-camera":
     "Shows one scene from the front, front left, front right and above. Upload a reference image or describe the subject and setting.",
+  "generation.preset.description.recommendedRatio": "Recommended aspect ratio {ratio}.",
   "generation.preset.description.faceEmphasis":
-    "The first two panels frame from below the chin to emphasise the face.",
+    "The front and side views keep facial features out of frame to emphasize the frontal close-up.",
   "generation.preset.faceEmphasis": "Face emphasis",
   "generation.preset.labelWithEmphasis": "{preset} ({emphasis})",
   "generation.preset.faceEmphasisHint":
-    "Frames the first two panels from below the chin, keeping only the neck and face so the frontal features read clearly. Useful for character sheets where the face matters.",
+    "Frames the front and side body views from the shoulders down, with the frontal face shown in the fourth panel.",
   "generation.preset.tune": "Adjust",
   "generation.preset.remove": "Remove preset",
   "generation.preset.view": "View the {preset} prompt",
