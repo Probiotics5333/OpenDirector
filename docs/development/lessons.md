@@ -54,6 +54,7 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Assistant completion follow-up:** [PR #465's browser run](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45526547494/job/138913562926) read a saved reply while the Agent still held its write lease. The assistant panel test must wait for both the reply's final status and removal of the active turn ID. Delaying lease release reproduced the failure on the upstream baseline.
 
 - **Shared model catalog follow-up:** [Nightly run 45309310680](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45309310680/job/138160760923) reached the empty-video-selector test after an earlier script saved a video model. A new page still reads the shared server's catalog. For a UI test of an empty category, scope that catalog response to the test page and verify the flow with a model already present on the shared server.
+- **Shared composer follow-up:** [PR #529's voice library check](https://github.com/ThinkFlowLab/OpenDirector/actions/runs/45865822618/job/140084924197) timed out when a save refreshed the audio draft and dropped its image-only preset default. A shared panel was closed by the preset's reset effect. Scope panel resets to the state the panel owns, and exercise a save while the panel is open in another media mode.
 
 ## A pending checkpoint can race with accepted cancellation
 

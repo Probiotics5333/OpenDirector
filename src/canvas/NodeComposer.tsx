@@ -175,6 +175,9 @@ export function NodeComposer({
     null,
   );
   const [presetCopied, setPresetCopied] = useState(false);
+  const presetValue = selectedNode?.type === "image"
+    ? selectedNode.data.settings?.imagePreset ?? "none"
+    : "none";
   const panel = running || optimizing ? null : openPanel;
   const [optimizedText, setOptimizedText] = useState(lastOptimizedText);
   const latestRunning = useRef(running);
@@ -194,9 +197,11 @@ export function NodeComposer({
   }, [optimizing]);
   useEffect(() => {
     setPanel(null);
+  }, [selectedNode?.id, running]);
+  useEffect(() => {
     setPresetPromptAnchor(null);
     setPresetTuneAnchor(null);
-  }, [selectedNode?.id, selectedNode?.data.settings?.imagePreset, running]);
+  }, [selectedNode?.id, presetValue, running]);
 
   if (
     !selectedNode ||
@@ -328,7 +333,6 @@ export function NodeComposer({
         ? backendReferenceIssue(node, settings, config)
         : t("generation.model.unavailable");
   // The chip mirrors the saved preset and supplies its own prompt.
-  const presetValue = settings.imagePreset ?? "none";
   const activePreset = mode === "image"
     ? imagePresets.find((item) => item.value === presetValue)
     : undefined;
