@@ -340,7 +340,18 @@ class CommitLog:
         megabytes for long histories, so they read the shared records directly.
         """
         path, manifest = self._read_manifest(project_id)
-        return tuple(self._history(path, manifest))
+        return tuple(self._read_history(project_id, path, manifest))
+
+    def _read_history(self, project_id, path, manifest):
+        while True:
+            try:
+                return self._history(path, manifest)
+            except (OSError, ProjectError):
+                # The immutable files can move together when a project is renamed.
+                current = self._read_manifest(project_id)
+                if current == (path, manifest):
+                    raise
+                path, manifest = current
 
     def history(self, project_id):
         records = self.records(project_id)
@@ -350,8 +361,7 @@ class CommitLog:
 
     def history_index(self, project_id):
         """Small detached event metadata; toolbar queries need no snapshots."""
-        path, manifest = self._read_manifest(project_id)
-        records = self._history(path, manifest)
+        records = self.records(project_id)
         return records[0].snapshot.undoClearedThrough, tuple(dict(
             commandId=r.command.commandId, type=r.command.type,
             cursor=r.event.cursor, source=r.event.source,
@@ -382,11 +392,12 @@ class CommitLog:
             cursor = head.snapshot.eventCursor
             if after > cursor:
                 raise ProjectError('变更游标超出当前工程，请重新读取快照。', 409)
-        if after == cursor:
-            if not validated:
-                self._history(path, manifest)
+        if after == cursor and validated:
             return dict(events=[], nextCursor=after, currentCursor=cursor, hasMore=False)
-        records = self._history(path, manifest)
+        records = self._read_history(project_id, path, manifest)
+        cursor = records[0].snapshot.eventCursor
+        if after > cursor:
+            raise ProjectError('变更游标超出当前工程，请重新读取快照。', 409)
         events = [record.event for record in reversed(records) if record.event and record.event.cursor > after][:limit]
         events = [event.model_copy(deep=True) for event in events]
         return dict(events=events, nextCursor=events[-1].cursor if events else after,

@@ -127,6 +127,7 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Trigger:** Opening a canvas with hundreds of full-snapshot commits sends media, conversation, and update requests concurrently.
 - **Evidence:** Media and assistant requests returned storage-lock timeouts on a Windows project with over 800 commits. All the referenced files were present, and reading the committed head resolved the failing media requests.
 - **Check:** Read current media from the committed head and replay immutable history outside the catalog lock. Before publishing, recheck the head and rerun command validation if it changed. The asset and storage tests cover original bytes and a concurrent head change during replay.
+- **Rename follow-up:** [PR #544](https://github.com/ThinkFlowLab/OpenDirector/pull/544) reproduced receipt and change-feed reads reporting corruption when a concurrent rename moved a valid commit directory. Resolve the project again after a failed replay and retry when its location or manifest changed. Keep the integrity error when the basis stayed the same.
 
 ## An upstream response and a consumer finishing it are separate facts
 

@@ -3,7 +3,7 @@ import { VoiceLibrary } from "./VoiceLibrary";
 import { modelDescription } from "./modelDescriptions";
 import { SearchableSelect } from "./SearchableSelect";
 import { providerLabel } from "./providerPresets";
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useEffect, useId, useLayoutEffect, useRef, useState } from "react";
 import { createPortal } from "react-dom";
 import {
   normalizeContent,
@@ -177,9 +177,12 @@ export function NodeComposer({
   );
   const [presetCopied, setPresetCopied] = useState(false);
   /** Hover hint for the preset selector, anchored to its own rect. */
-  const [presetHint, setPresetHint] = useState<{ x: number; y: number } | null>(
+  const [presetHint, setPresetHint] = useState<HTMLElement | null>(
     null,
   );
+  const presetHintId = useId();
+  const presetHintElement = useRef<HTMLDivElement>(null);
+  const presetHintEnabled = selectedNode?.type === "image" && !running && !optimizing;
   const presetValue = selectedNode?.type === "image"
     ? selectedNode.data.settings?.imagePreset ?? "none"
     : "none";
@@ -203,6 +206,26 @@ export function NodeComposer({
   useEffect(() => {
     setPanel(null);
   }, [selectedNode?.id, running]);
+  useEffect(() => {
+    setPresetHint(null);
+  }, [selectedNode?.id, presetHintEnabled]);
+  useLayoutEffect(() => {
+    const tip = presetHintElement.current;
+    if (!presetHintEnabled || !presetHint || !tip) return;
+    const anchor = presetHint.getBoundingClientRect();
+    const { width, height } = tip.getBoundingClientRect();
+    const left = anchor.left + (anchor.width - width) / 2;
+    const top = anchor.top - height - 8;
+    tip.style.left = `${Math.max(12, Math.min(innerWidth - width - 12, left))}px`;
+    tip.style.top = `${Math.max(12, Math.min(innerHeight - height - 12, top >= 12 ? top : anchor.bottom + 8))}px`;
+    const hide = () => setPresetHint(null);
+    window.addEventListener("resize", hide);
+    window.addEventListener("scroll", hide, true);
+    return () => {
+      window.removeEventListener("resize", hide);
+      window.removeEventListener("scroll", hide, true);
+    };
+  }, [presetHint, presetHintEnabled, t]);
   useEffect(() => {
     setPresetPromptAnchor(null);
     setPresetTuneAnchor(null);
@@ -991,30 +1014,22 @@ export function NodeComposer({
                 className="cw-preset-select"
                 onPointerEnter={(event) => {
                   if (event.pointerType === "touch" || event.buttons) return;
-                  if (running || optimizing) return;
-                  const rect = event.currentTarget.getBoundingClientRect();
-                  setPresetHint({
-                    x: Math.max(16, Math.min(innerWidth - 16, rect.left + rect.width / 2)),
-                    y: rect.top - 8,
-                  });
+                  if (presetHintEnabled) setPresetHint(event.currentTarget);
                 }}
                 onPointerLeave={() => setPresetHint(null)}
                 onPointerDown={() => setPresetHint(null)}
-                onFocus={() => {
-                  if (running || optimizing) return;
-                  const rect = document.activeElement?.getBoundingClientRect();
-                  if (!rect) return;
-                  setPresetHint({
-                    x: Math.max(16, Math.min(innerWidth - 16, rect.left + rect.width / 2)),
-                    y: rect.top - 8,
-                  });
-                }}
-                onBlur={() => setPresetHint(null)}
               >
               <select
                 aria-label={t("generation.imagePreset")}
+                aria-describedby={presetHint && presetHintEnabled ? presetHintId : undefined}
                 value={presetValue}
                 disabled={running || optimizing}
+                onFocus={(event) => {
+                  if (presetHintEnabled && event.currentTarget.matches(":focus-visible"))
+                    setPresetHint(event.currentTarget);
+                }}
+                onBlur={() => setPresetHint(null)}
+                onKeyDown={() => setPresetHint(null)}
                 onChange={(event) => applyPreset(event.target.value)}
               >
                 <option value="none">{t("generation.preset.none")}</option>
@@ -1603,16 +1618,13 @@ export function NodeComposer({
           )}
         </ComposerPopover>
       )}
-      {presetHint &&
+      {presetHint && presetHintEnabled &&
         createPortal(
           <div
+            id={presetHintId}
+            ref={presetHintElement}
             className="cw-tooltip"
             role="tooltip"
-            style={{
-              left: presetHint.x,
-              top: presetHint.y,
-              transform: "translate(-50%, -100%)",
-            }}
           >
             <span>{t("generation.preset.hint")}</span>
           </div>,

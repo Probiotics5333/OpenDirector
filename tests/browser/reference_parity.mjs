@@ -273,9 +273,18 @@ try {
         .getAttribute("data-reference"),
     );
     assert.ok(part.nodeId);
-    await page
-      .getByRole("combobox", { name: "图片创作预设", exact: true })
-      .selectOption("four-view");
+    const presetPicker = page.getByRole("combobox", { name: "图片创作预设", exact: true });
+    const presetHint = page.getByRole("tooltip").filter({ hasText: "选择预设图片样式" });
+    await presetPicker.hover();
+    await presetHint.waitFor();
+    await presetPicker.click();
+    await presetHint.waitFor({ state: "hidden" });
+    await page.keyboard.press("Escape");
+    await presetPicker.press("Tab");
+    await page.keyboard.press("Shift+Tab");
+    await presetHint.waitFor();
+    assert.equal(await presetPicker.getAttribute("aria-describedby"), await presetHint.getAttribute("id"));
+    await presetPicker.selectOption("four-view");
     await page.locator('.cw-composer [data-preset="four-view"]').waitFor();
     const copied = await page
       .getByRole("textbox", { name: "生成提示词", exact: true })
