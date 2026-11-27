@@ -122,6 +122,12 @@ When work exposes a consequential risk or a recurring problem, add a lesson or u
 - **Four-view cropping:** A frozen face-emphasis prompt proves the setting reached the provider, while visual compliance still requires reviewing the generated image. Put the crop before appearance guidance and scope it to the first two columns. Specify a separate scale and headroom for the full back view. Check both a text-only subject and a reference with a less obvious neck.
 - **Reference medium:** Explicit photography wording corrected a photograph but turned an illustrated reference into a live-action portrait. Treat the layout as composition only and use medium-neutral framing language. Verify style changes against a photo and an illustration.
 
+## History replay can block unrelated canvas reads
+
+- **Trigger:** Opening a canvas with hundreds of full-snapshot commits sends media, conversation, and update requests concurrently.
+- **Evidence:** Media and assistant requests returned storage-lock timeouts on a Windows project with over 800 commits. All the referenced files were present, and reading the committed head resolved the failing media requests.
+- **Check:** Read current media from the committed head and replay immutable history outside the catalog lock. Before publishing, recheck the head and rerun command validation if it changed. The asset and storage tests cover original bytes and a concurrent head change during replay.
+
 ## An upstream response and a consumer finishing it are separate facts
 
 - **Trigger:** Forwarding streamed model responses through the loopback gateway.

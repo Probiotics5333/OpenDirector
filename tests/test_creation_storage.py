@@ -946,6 +946,27 @@ def test_first_autosave_after_a_cold_open_reuses_the_warmed_chain(projects, monk
     assert decoded == []  # The warmed ancestors are trusted; only a new record is built.
 
 
+def test_write_replays_outside_catalog_lock_and_rechecks_changed_head(projects, monkeypatch):
+    created = create(projects)
+    planned = rename(created, 'Final', revision=2)
+    intervening = rename(created, 'Intervening', revision=1)
+    history = projects._history
+    scanned = []
+
+    def advance(path, manifest):
+        assert not projects.local.lock.is_locked
+        records = history(path, manifest)
+        scanned.append(manifest.head)
+        if len(scanned) == 1:
+            assert projects.execute(intervening).status == 'applied'
+        return records
+
+    monkeypatch.setattr(projects, '_history', advance)
+    assert projects.execute(planned).status == 'applied'
+    assert scanned == [created.commandId, created.commandId, intervening.commandId]
+    assert projects.snapshot(created.projectId).project.name == 'Final'
+
+
 def test_plain_snapshot_reads_do_not_warm_history_in_the_background(projects, monkeypatch):
     # Job scans call snapshot() for every project; that must not validate every
     # chain in the background the way opening a canvas does.
