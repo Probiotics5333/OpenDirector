@@ -1,5 +1,5 @@
 import type { ContentPart, ReferenceContent } from "./chatReferenceContent.ts";
-import type { Translate } from "../i18n/I18nProvider.tsx";
+import { translate } from "../i18n/messages.ts";
 import { backendReferences, type ModelConfig } from "../backend/rules.ts";
 import { generationReferenceIssue } from "./generationCatalog.ts";
 import type { CanvasNode, GenerationSettings } from "./model.ts";
@@ -61,7 +61,18 @@ export function presetImageTitles(
   const usable = config
     ? backendReferences(settings, sources, config).map(({ node }) => node)
     : sources.filter((node) => !generationReferenceIssue(node, settings));
-  return usable.flatMap((node) => node.type === "image" ? [node.data.title] : []);
+  const subjectTitles = new Map(
+    sources
+      .filter((node) => node.type === "subject")
+      .map((node) => [node.id, node.data.title]),
+  );
+  const images = new Map<string, string>();
+  for (const node of usable) {
+    if (node.type !== "image") continue;
+    const key = node.data.backendAssetId ?? node.data.src ?? node.id;
+    if (!images.has(key)) images.set(key, subjectTitles.get(node.id) ?? node.data.title);
+  }
+  return [...images.values()];
 }
 
 /** The preset atom in a prompt, if one is present. */
@@ -71,14 +82,18 @@ export function presetPart(content: ReferenceContent): PresetPart | undefined {
   );
 }
 
+export function withoutPresetParts(content: ReferenceContent): ReferenceContent {
+  return content.filter(
+    (part) => !(part.type === "skill" && part.preset),
+  );
+}
+
 /** Put one preset at the front; another replaces it, so there is only one. */
 export function withPresetPart(
   content: ReferenceContent,
   preset: PresetPart | null,
 ): ReferenceContent {
-  const rest = content.filter(
-    (part) => !(part.type === "skill" && part.preset),
-  );
+  const rest = withoutPresetParts(content);
   return preset ? [preset, ...rest] : rest;
 }
 
@@ -89,21 +104,22 @@ export function withPresetPart(
 export function presetSkillText(
   preset: PromptSkillPreset,
   references: readonly string[],
-  t: Translate,
   faceEmphasis = false,
 ): string {
+  // Generation freezes instructions in the catalog's language.
+  const locale = "zh-CN";
   const lines: string[] = [];
   if (references.length > 1) {
     const list = references
       .map((title, index) =>
-        t("generation.preset.skill.referenceItem", {
+        translate(locale, "generation.preset.skill.referenceItem", {
           index: index + 1,
           title,
         }),
       )
-      .join(t("generation.preset.skill.separator"));
+      .join(translate(locale, "generation.preset.skill.separator"));
     lines.push(
-      t("generation.preset.skill.references", {
+      translate(locale, "generation.preset.skill.references", {
         count: references.length,
         list,
       }),
@@ -117,7 +133,7 @@ export function presetSkillText(
     ? [emphasisPrompt]
     : (withImage ? preset.prompts : (preset.textPrompts ?? preset.prompts));
   if (prompts.length > 1) {
-    lines.push(t("generation.preset.skill.sequence"));
+    lines.push(translate(locale, "generation.preset.skill.sequence"));
     prompts.forEach((prompt, index) => lines.push(`${index + 1}. ${prompt}`));
   } else if (prompts[0]) {
     lines.push(prompts[0]);

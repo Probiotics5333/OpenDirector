@@ -9,7 +9,7 @@ import {
   type ReferenceContent,
 } from "./chatReferenceContent.ts";
 import { tNow } from "../i18n/messages.ts";
-import { presetPart } from "./promptSkill.ts";
+import { presetPart, withoutPresetParts } from "./promptSkill.ts";
 
 export function generationPrompt(node: CanvasNode) {
   return node.type === "audio" && node.data.promptContent !== undefined
@@ -108,9 +108,7 @@ export function generationContentPatch(
   const mentions: NonNullable<CanvasNodeData["promptMentions"]> = [];
   for (const part of content) {
     if (part.type === "text") prompt += part.text;
-    // A preset chip is not text: its instructions travel beside the prompt.
-    else if (part.type === "skill")
-      prompt += part.preset ? "" : `/${part.name}`;
+    else if (part.type === "skill") prompt += part.preset ? "" : `/${part.name}`;
     else {
       const label = `@${part.name}`;
       mentions.push({
@@ -124,7 +122,7 @@ export function generationContentPatch(
   }
   return {
     prompt,
-    promptContent: normalizeContent(content.filter((part) => part.type !== "skill" || !part.preset)),
+    promptContent: normalizeContent(withoutPresetParts(content)),
     promptMentions: mentions,
   };
 }

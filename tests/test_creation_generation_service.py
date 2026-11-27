@@ -112,6 +112,7 @@ async def test_cancel_wins_over_an_in_flight_running_checkpoint(project, monkeyp
     pytest.param('four-view', False, False, '蓝色外套和短发', (FOUR_VIEW_TEXT,), id='four-view-text'),
     pytest.param('four-view', False, True, '', (FOUR_VIEW_FACE_TEXT,), id='four-view-text-face-emphasis'),
     pytest.param('four-view', True, False, '', PRESETS['four-view'].prompts, id='four-view-reference'),
+    pytest.param('four-view', 'duplicate', False, '', PRESETS['four-view'].prompts, id='four-view-duplicate-image'),
     pytest.param('four-view', True, True, '', (FOUR_VIEW_FACE_EMPHASIS,), id='four-view-reference-face-emphasis'),
     *(
         pytest.param(key, with_image, False, '' if with_image else '暖色调，主体偏左。',
@@ -165,6 +166,18 @@ async def test_image_preset_freezes_the_instructions_for_the_available_inputs(
                 id=uuid4(), projectId=pid, binding='pinned', source=asset_ref(snapshot.assets[0]),
                 targetSpecId=spec.id))
             assert linked.status == 'applied', linked
+            if with_reference == 'duplicate':
+                source, _ = media(project, kind='image', title='Same image on canvas')
+                materialized = send(store, pid, 'canvas.materialize', session=session,
+                    versions=[ver('canvas_item', source)], itemId=source.id, asset=asset_ref(snapshot.assets[0]))
+                assert materialized.status == 'applied', materialized
+                snapshot = store.snapshot(pid)
+                linked = send(store, pid, 'reference.add', session=session, versions=[
+                    ver('canvas_item', snapshot.canvasItems[0]),
+                    ver('generation_spec', snapshot.generationSpecs[0])], reference=dict(
+                    id=uuid4(), projectId=pid, binding='follow_current', source=dict(id=source.id),
+                    targetSpecId=spec.id, order=1))
+                assert linked.status == 'applied', linked
         for _ in range(2):
             before = store.snapshot(pid)
             target, spec = before.canvasItems[0], before.generationSpecs[0]
@@ -182,8 +195,8 @@ async def test_image_preset_freezes_the_instructions_for_the_available_inputs(
             assert after.generationSpecs[0].promptContent == content
         assert len(provider.calls) == 2
         for call in provider.calls:
-            assert len(call['referenceIds']) == int(with_reference)
-            assert ('参考图' in call['prompt']) == with_reference
+            assert len(call['referenceIds']) == int(bool(with_reference))
+            assert ('参考图' in call['prompt']) == bool(with_reference)
             assert call['prompt'] == (f'{expected}\n\n{user_prompt}' if user_prompt else expected)
             assert call['promptContent'] == (
                 [dict(type='text', text=expected + '\n\n'), dict(type='text', text=user_prompt)]

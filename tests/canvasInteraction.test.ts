@@ -20,6 +20,7 @@ import {
   createNode,
 } from "../src/canvas/model.ts";
 import type { ModelConfig } from "../src/backend/rules.ts";
+import { presetImageTitles } from "../src/canvas/promptSkill.ts";
 import {
   authorFlowChanges,
   canvasKeyAction,
@@ -28,7 +29,7 @@ import {
   droppedConnectionTarget,
   mergeFlowSelection,
   placeCreatedNode,
-  precheckReferenceSources,
+  presetReferenceSources,
   serviceGenerationPlan,
   textGenerationPlan,
 } from "../src/canvas/workspaceInteraction.ts";
@@ -504,12 +505,13 @@ test("run-before precheck counts pinned images that have no follow node", () => 
     assets: pins.slice(0, 8),
   });
   assert.equal(mixed.status, "ready");
-  const sources = precheckReferenceSources({
+  const sources = presetReferenceSources({
     node: mixedNode,
     incoming: [follow],
     assets: pins.slice(0, 8),
   });
-  assert.equal(sources.filter((item) => item.data.kind === "image").length, 8);
+  assert.ok(mixedNode.data.settings);
+  assert.equal(presetImageTitles(mixedNode.data.settings, sources, image).length, 8);
 
   const distinctFollow = ready("image", { backendAssetId: "follow-extra" });
   const overflow = serviceGenerationPlan({

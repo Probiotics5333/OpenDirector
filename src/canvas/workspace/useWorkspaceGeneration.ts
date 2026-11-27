@@ -30,10 +30,10 @@ import {
 import { type CanvasNode } from "../model";
 import { groupDescendants } from "../operations";
 import { runWorkflowSteps } from "../groupWorkflow";
-import { generationContent, incomingReferenceNodes } from "../generationReferenceContent.ts";
+import { incomingReferenceNodes } from "../generationReferenceContent.ts";
 import { getNodeGenerationSettings } from "../NodeComposer";
 import {
-  precheckReferenceSources,
+  presetReferenceSources,
   serviceGenerationPlan,
   textGenerationPlan,
 } from "../workspaceInteraction.ts";
@@ -585,7 +585,7 @@ export function useWorkspaceGeneration(
     ).find((item) => item.value === value);
     if (!preset) return undefined;
     const config = backendModel(settings, backendCatalog.models);
-    return presetSkillText(preset, presetImageTitles(settings, sources, config), t, settings.faceEmphasis === true);
+    return presetSkillText(preset, presetImageTitles(settings, sources, config), settings.faceEmphasis === true);
   };
   const runServiceGeneration = (node: CanvasNode, incoming: CanvasNode[]) => {
     const document = historyRef.current.present;
@@ -597,7 +597,7 @@ export function useWorkspaceGeneration(
       models: backendCatalog.models,
       assets,
       promptPrefix: imagePresetSkill(node, node.type === "image"
-        ? precheckReferenceSources({ node, incoming: incomingReferenceNodes(document, node.id, true), assets })
+        ? presetReferenceSources({ node, incoming: incomingReferenceNodes(document, node.id, true), assets })
         : []),
     });
     if (plan.status === "blocked") {

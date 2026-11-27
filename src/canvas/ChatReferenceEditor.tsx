@@ -33,7 +33,7 @@ import {
   type Caret,
 } from "./chatReferenceDOM.ts";
 import { referenceInsertion } from "./chatReferenceInsertion.ts";
-import { presetPart, withPresetPart } from "./promptSkill.ts";
+import { presetPart, withoutPresetParts, withPresetPart } from "./promptSkill.ts";
 import type { ReferenceRules } from "./chatReferenceInsertion.ts";
 import {
   isCaretNavigationKey,
@@ -957,10 +957,11 @@ export function ChatReferenceEditor({
       [],
     );
     event.preventDefault();
-    event.clipboardData.setData("text/plain", contentText(selected, false, t));
+    const content = withoutPresetParts(selected);
+    event.clipboardData.setData("text/plain", contentText(content, false, t));
     event.clipboardData.setData(
       CLIPBOARD,
-      JSON.stringify({ scope, content: selected }),
+      JSON.stringify({ scope, content }),
     );
     if (cut)
       publish(editContent(current.current, at, []), {

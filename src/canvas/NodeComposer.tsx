@@ -338,7 +338,6 @@ export function NodeComposer({
     ? presetSkillText(
         activePreset,
         presetImageTitles(settings, presetSources ?? [...incomingNodes, ...(pinnedPrecheck ?? [])], config),
-        t,
         faceEmphasis,
       )
     : "";

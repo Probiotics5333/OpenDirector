@@ -260,7 +260,7 @@ export function canvasKeyAction(input: {
 }
 
 
-type SubmissionAsset = { id: string; kind?: string | null; size?: number };
+type SubmissionAsset = { id: string; kind?: string | null; size?: number; name?: string };
 
 /** Identity keys used to avoid counting a pinned asset that already arrives as a follow node. */
 function precheckSourceKeys(node: CanvasNode): string[] {
@@ -314,12 +314,32 @@ export function pinnedPrecheckNodes(input: {
   return extras;
 }
 
-export function precheckReferenceSources(input: {
+export function presetReferenceSources(input: {
   node: CanvasNode;
   incoming: readonly CanvasNode[];
   assets: readonly SubmissionAsset[];
 }): CanvasNode[] {
-  return [...input.incoming, ...pinnedPrecheckNodes(input)];
+  // Resolution walks mentioned bindings first, regardless of how they are bound.
+  // Keep pinned and followed candidates until the preset expands subjects and
+  // deduplicates by the actual assets, in that order.
+  const assets = new Map(input.assets.map((asset) => [asset.id, asset]));
+  const pinned = pinnedPrecheckNodes({ ...input, incoming: [] }).map((node) => ({
+    ...node,
+    data: {
+      ...node.data,
+      title: assets.get(node.data.backendAssetId ?? "")?.name ?? node.data.title,
+    },
+  }));
+  const followedById = new Map(input.incoming.map((node) => [node.id, node]));
+  const pinnedByAsset = new Map(pinned.map((node) => [node.data.backendAssetId, node]));
+  const mentioned = (input.node.data.promptContent ?? []).flatMap((part) => {
+    if (part.type !== "reference") return [];
+    const source = part.binding === "asset"
+      ? pinnedByAsset.get(part.assetId)
+      : followedById.get(part.nodeId ?? "");
+    return source ? [source] : [];
+  });
+  return [...new Set([...mentioned, ...input.incoming, ...pinned])];
 }
 
 /** Pinned prompt tokens submit the saved asset, never a canvas node invented from the label. */

@@ -94,6 +94,15 @@ def new_seed():
     return secrets.randbelow(2**31)
 
 
+def transmitted_assets(references):
+    """Keep the first transmitted binding for each asset, in request order."""
+    assets = {}
+    for reference in references:
+        if reference.transmission != 'context_only':
+            assets.setdefault(reference.asset.assetId, reference)
+    return assets
+
+
 class CreationGeneration(GenerationRuntime):
     def __init__(self, projects, configs, provider=None, *, availability=None):
         super().__init__()
@@ -119,7 +128,7 @@ class CreationGeneration(GenerationRuntime):
         # Project accepted jobs without revalidating the current speech catalog.
         profile = 'minimax-speech' if is_minimax_speech(config) else input_rules(config)['profile']
         assets = {a.id: a for a in self.projects.snapshot(job.projectId).assets}
-        reference_ids = list(dict.fromkeys(str(r.asset.assetId) for r in job.inputSnapshot.references if r.transmission != 'context_only'))
+        reference_ids = [str(asset_id) for asset_id in transmitted_assets(job.inputSnapshot.references)]
         content = None
         kling_content = None
         if spec.promptContent is not None:
@@ -423,8 +432,8 @@ class CreationGeneration(GenerationRuntime):
             self.provider.validate(spec.kind, config)
             preset = preset_prompt(
                 spec.parameters.preset, spec.parameters.faceEmphasis,
-                tuple(reference.sourceTitle or reference.name for reference in resolved
-                      if reference.asset.kind == 'image' and reference.transmission != 'context_only'),
+                tuple(reference.sourceTitle or reference.name for reference in transmitted_assets(resolved).values()
+                      if reference.asset.kind == 'image'),
             ) if spec.kind == 'image' else None
             snapshot = InputSnapshot(spec=spec.model_copy(update={'currentResultId': None}),
                 model=ModelSnapshot(modelConfigId=public.id, inputRules=public.inputRules,

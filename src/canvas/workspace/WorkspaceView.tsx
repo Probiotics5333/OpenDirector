@@ -76,7 +76,7 @@ import { canAddReference, MAX_ZOOM, MIN_ZOOM } from "../model";
 import { gridSplitImage } from "../nodeActionWorkflow";
 import { NodeComposer } from "../NodeComposer";
 import { incomingReferenceNodes } from "../generationReferenceContent.ts";
-import { pinnedPrecheckNodes, precheckReferenceSources } from "../workspaceInteraction.ts";
+import { pinnedPrecheckNodes, presetReferenceSources } from "../workspaceInteraction.ts";
 
 import { NodeInfoButton } from "../NodeInfoButton";
 import { NodeSelectionToolbar } from "../NodeSelectionToolbar";
@@ -2051,7 +2051,7 @@ export function WorkspaceView({ rt, editingState, editSession }: {
                 })}
                 presetSources={composerNode.type === "image" &&
                   (composerNode.data.settings?.imagePreset ?? "none") !== "none"
-                  ? precheckReferenceSources({
+                  ? presetReferenceSources({
                       node: composerNode,
                       incoming: incomingReferenceNodes(doc, composerNode.id, true),
                       assets: typeof submissionAssets === "function" ? submissionAssets() : [],
